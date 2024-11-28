@@ -48,7 +48,7 @@ Morph.Rate = {mr}
 Morph.AllowShrinkage = 1
 Morph.TargetWidth = 130
 Morph.TargetHeight = 100
-Morph.CornerRadius = 1
+Morph.CornerRadius = 5
 
 Source.Velocity = 2   ; axial motion
 
@@ -87,17 +87,18 @@ ABEC.MeshFrequency = 1000   ; [Hz]
 
 
 ABEC.Polars:SPL_H = {{
-	MapAngleRange = 0,90,19
+	MapAngleRange = 0,180,37
 	NormAngle = 10    ; [deg]
 	Distance = 2      ; [m]
-	;Offset = 95       ; [mm]
-	Inclination = 0
+	_Offset = 99       ; [mm]
+	_Inclination = 0
 }}
 
 ABEC.Polars:SPL_V = {{
-	MapAngleRange = 0,90,19
+	MapAngleRange = 0,180,37
 	NormAngle = 10
 	Distance = 2
+	_Offset = 99       ; [mm]
 	Inclination = 90
 }}
 
@@ -106,10 +107,11 @@ Output.ABECProject = 1
 
 Report = {{
   Title = "ATH report. All praise mabat!"
-  NormAngle = 10
-  Width = 1200
-  Height = 800
+  _NormAngle = 10
+  Width = 1800
+  Height = 1200
   SPL_Range = 50
-  MaxRadius = 90
-  PolarData = "SPL_H"
+  MaxRadius = 180
+  PolarData = SPL_H
+  _PolarDataV = SPL_V
 }}
