@@ -6,7 +6,7 @@ OSSE = {{  ; horizontal waveguide section
   L = {L}          				; Length of the waveguide [mm].
   s = {s} -  {vs}*sin(p)^2          ; Shape exponent for the termination section.
   n = {n} -  {vn}*sin(p)^2          ; Curvature control exponent for the termination.
-  q = {q} -  {vq}*sin(p)^2          ; Transition smoothness parameter at termination.
+  q = {q}         ; Transition smoothness parameter at termination.
 }}
 
 _Mesh.ZMapElementSize = 0.1,0.3,0.25,0.85
@@ -111,5 +111,5 @@ Report = {{
   Height = 800
   SPL_Range = 50
   MaxRadius = 90
-  PolarData = "SPL"
+  PolarData = "SPL_H"
 }}

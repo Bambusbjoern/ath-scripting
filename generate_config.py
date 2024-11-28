@@ -1,6 +1,7 @@
 import os
 
-def generate_waveguide_config(configs_folder, r0, a0, a, k, L, s, n, q, va, va0, vk, vs, vn, vq, mfp, mr, verbose=False):
+
+def generate_waveguide_config(configs_folder, r0, a0, a, k, L, s, n, q, va, u_va0, u_vk, u_vs, u_vn, mfp, mr, verbose=False):
     """
     Generates a waveguide configuration file based on provided parameters.
 
@@ -15,11 +16,10 @@ def generate_waveguide_config(configs_folder, r0, a0, a, k, L, s, n, q, va, va0,
     - n: Parameter n.
     - q: Parameter q.
     - va: Fixed parameter for vertical angle.
-    - va0: Additional angle adjustment for a0.
-    - vk: Adjustment for k.
-    - vs: Adjustment for s.
-    - vn: Adjustment for n.
-    - vq: Adjustment for q.
+    - u_va0: Normalized parameter for va0.
+    - u_vk: Normalized parameter for vk.
+    - u_vs: Normalized parameter for vs.
+    - u_vn: Normalized parameter for vn.
     - mfp: Morphing fixed part.
     - mr: Morphing rate.
     - verbose (bool): If True, print additional debug information.
@@ -38,23 +38,37 @@ def generate_waveguide_config(configs_folder, r0, a0, a, k, L, s, n, q, va, va0,
         with open('base_template.txt', 'r') as file:
             base_template_content = file.read()
 
+        # Calculate derived parameters
+        va0 = - a0 + u_va0 * 60 # Derived parameter for va0
+        vk = -k + u_vk * 10     # Derived parameter for vk
+        vs = -s + u_vs * 2      # Derived parameter for vs
+        vn = 2 - n + u_vn * 8  # Derived parameter for vn
+
         # Generate config content
         config_content = base_template_content.format(
             r0=r0, a0=a0, a=a, k=k, L=L, s=s, n=n, q=q,
-            va=va, va0=va0, vk=vk, vs=vs, vn=vn, vq=vq, mfp=mfp, mr=mr
+            va=va, va0=va0, vk=vk, vs=vs, vn=vn, mfp=mfp, mr=mr
         )
-        
-        # Define the filename based on parameters (without negative signs in values)
+
+        # Define the filename based on normalized parameters (u_va0, u_vk, u_vs, u_vn)
         filename = (
-            f"L_{L:.2f}_a_{a:.2f}_r0_{r0:.2f}_a0_{a0:.2f}_k_{k:.2f}_s_{s:.2f}_q_{q:.3f}_n_{n:.2f}"
-            f"_va_{va:.2f}_va0_{va0:.2f}_vk_{vk:.2f}_vs_{vs:.2f}_vn_{vn:.2f}_vq_{vq:.3f}_mfp_{mfp:.2f}_mr_{mr:.2f}.cfg"
+            f"L{L:.1f}A{a:.0f}R{r0:.0f}"
+            f"A0{a0:.1f}K{k:.1f}S{s:.1f}"
+            f"Q{q:.3f}N{n:.1f}UVA0{u_va0:.3f}"
+            f"UVK{u_vk:.3f}UVS{u_vs:.3f}UVN{u_vn:.3f}"
+            f"M{mfp:.2f}MR{mr:.1f}.cfg"
         )
+
+        # Generate the folder name if needed
+        foldername = filename.replace('.cfg', '')
+
+        # Combine with the configs folder
         filepath = os.path.join(configs_folder, filename)
 
         # Write the configuration to a file
         with open(filepath, 'w') as config_file:
             config_file.write(config_content)
-        
+
         if verbose:
             print(f"Created configuration file: {filepath}")
         return True

@@ -49,36 +49,23 @@ add_param('s', 0.0, 2.0)    # Optimized between 0.0 and 2
 add_param('q', 0.99, 1.0)   # Optimized between 0.99 and 1.0
 add_param('n', 2.0, 10.0)   # Optimized between 2.0 and 10.0
 add_param('va', 20, 20)
-add_param('mfp', 0.0, 1.0) #morph.fixedpart
+add_param('mfp', 0.0, 0.0) #morph.fixedpart
 add_param('mr', 1.0, 10.0)  #morph.rate
 add_param('u_va0', 0.0, 1.0)  # Normalized range for va0
 add_param('u_vk', 0.0, 1.0)   # Normalized range for vk
 add_param('u_vs', 0.0, 1.0)   # Normalized range for vs
 add_param('u_vn', 0.0, 1.0)   # Normalized range for vn
-add_param('u_vq', 0.0, 1.0)   # Normalized range for vq
 
 target_size = 65
 
 
-# Transform scaled variables into the dynamic ranges
-def transform_variables(param_values):
-    """
-    Transform unscaled 'u_v' variables into their dynamic ranges based on the associated parameters.
-    """
-    transformed_values = {}
-
-    # Ensure transformed variables remain in their expected ranges
-    transformed_values['va0'] = param_values['a0'] * (1 - param_values['u_va0'])
-    transformed_values['vk'] = -param_values['k'] + param_values['u_vk'] * (10)
-    transformed_values['vs'] = -param_values['s'] + param_values['u_vs'] * (2)
-    transformed_values['vn'] = 2 - param_values['n'] + param_values['u_vn'] * (8)
-    transformed_values['vq'] = 0.9 - param_values['q'] + param_values['u_vq'] *0.1
-
-    return transformed_values
-
 # Pattern to parse the .png filenames for parameter values and ratings
 filename_pattern = re.compile(
-    r"(?P<rating>[\d.]+)_L-(?P<L>[\d.]+)_a-(?P<a>[\d.]+)_r0-(?P<r0>[\d.]+)_a0-(?P<a0>[\d.]+)_k-(?P<k>[\d.]+)_s-(?P<s>[\d.]+)_q-(?P<q>[\d.]+)_n-(?P<n>[\d.]+)_va-(?P<va>[\d.]+)_va0-(?P<va0>[\d.]+)_vk-(?P<vk>[\d.]+)_vs-(?P<vs>[\d.]+)_vn-(?P<vn>[\d.]+)_vq-(?P<vq>[\d.]+)_mfp-(?P<mfp>[\d.]+)_mr-(?P<mr>[\d.]+)\.png"
+    r"(?P<rating>[\d.]+)_L(?P<L>[\d.]+)A(?P<a>[\d.]+)R(?P<r0>[\d.]+)"
+    r"A0(?P<a0>[\d.]+)K(?P<k>[\d.]+)S(?P<s>[\d.]+)"
+    r"Q(?P<q>[\d.]+)N(?P<n>[\d.]+)"
+    r"UVA0(?P<u_va0>[\d.]+)UVK(?P<u_vk>[\d.]+)UVS(?P<u_vs>[\d.]+)"
+    r"UVN(?P<u_vn>[\d.]+)M(?P<mfp>[\d.]+)MR(?P<mr>[\d.]+)\.png"
 )
 
 # Load previous results from the results folder
@@ -106,67 +93,52 @@ def create_marker_file(results_folder, foldername, rating):
         marker_file.write(f"Foldername: {foldername}\n")  # Include the foldername for reference
     print(f"Created marker file for failed waveguide: {marker_filename}")
 
+# Inside the `objective` function
 def objective(params):
     # Unpack parameters and add fixed parameters
     param_values = {name: val for name, val in zip([d.name for d in space], params)}
     param_values.update(fixed_params)  # Add fixed parameters
 
-    # Transform scaled variables into their dynamic ranges
-    transformed_values = transform_variables(param_values)
-    param_values.update(transformed_values)  # Add transformed variables to `param_values`
-
-    # Format each parameter to match the specified decimal precision
-    r0 = f"{param_values['r0']:.2f}"
-    L = f"{param_values['L']:.2f}"
-    a0 = f"{param_values['a0']:.2f}"
-    a = f"{param_values['a']:.2f}"
-    k = f"{param_values['k']:.2f}"
-    s = f"{param_values['s']:.2f}"
-    q = f"{param_values['q']:.3f}"
-    n = f"{param_values['n']:.2f}"
-    va = f"{param_values['va']:.2f}"
-    va0 = f"{param_values['va0']:.2f}"
-    vk = f"{param_values['vk']:.2f}"
-    vs = f"{param_values['vs']:.2f}"
-    vn = f"{param_values['vn']:.2f}"
-    vq = f"{param_values['vq']:.3f}"
-    mfp = f"{param_values['mfp']:.2f}"
-    mr = f"{param_values['mr']:.2f}"
-    
+    # Format parameters to match the specified decimal precision
+    formatted_params = {
+        'r0': float(f"{param_values['r0']:.2f}"),
+        'L': float(f"{param_values['L']:.2f}"),
+        'a': float(f"{param_values['a']:.2f}"),
+        'a0': float(f"{param_values['a0']:.2f}"),
+        'k': float(f"{param_values['k']:.2f}"),
+        's': float(f"{param_values['s']:.2f}"),
+        'q': float(f"{param_values['q']:.3f}"),
+        'n': float(f"{param_values['n']:.2f}"),
+        'va': float(f"{param_values['va']:.2f}"),
+        'u_va0': float(f"{param_values['u_va0']:.3f}"),
+        'u_vk': float(f"{param_values['u_vk']:.3f}"),
+        'u_vs': float(f"{param_values['u_vs']:.3f}"),
+        'u_vn': float(f"{param_values['u_vn']:.3f}"),
+        'mfp': float(f"{param_values['mfp']:.2f}"),
+        'mr': float(f"{param_values['mr']:.2f}")
+    }
 
     filename = (
-        f"L_{L}_a_{a}_r0_{r0}_a0_{a0}_k_{k}_s_{s}_q_{q}_n_{n}_va_{va}_va0_{va0}_vk_{vk}_vs_{vs}_vn_{vn}_vq_{vq}_mfp_{mfp}_mr_{mr}.cfg")
-    foldername = (
-        f"L_{L}_a_{a}_r0_{r0}_a0_{a0}_k_{k}_s_{s}_q_{q}_n_{n}_va_{va}_va0_{va0}_vk_{vk}_vs_{vs}_vn_{vn}_vq_{vq}_mfp_{mfp}_mr_{mr}")
+        f"L{formatted_params['L']:.1f}A{formatted_params['a']:.0f}R{formatted_params['r0']:.0f}"
+        f"A0{formatted_params['a0']:.1f}K{formatted_params['k']:.1f}S{formatted_params['s']:.1f}"
+        f"Q{formatted_params['q']:.3f}N{formatted_params['n']:.1f}UVA0{formatted_params['u_va0']:.3f}"
+        f"UVK{formatted_params['u_vk']:.3f}UVS{formatted_params['u_vs']:.3f}UVN{formatted_params['u_vn']:.3f}"
+        f"M{formatted_params['mfp']:.2f}MR{formatted_params['mr']:.1f}.cfg"
+    )
+    foldername = filename.replace('.cfg', '')
 
-    # Retrieve simulation folder and type
-    simulation_folder, sim_type = get_simulation_folder_type("base_template.txt")
-
+    # Pass normalized parameters directly to `generate_waveguide_config`
     if not generate_waveguide_config(
-        CONFIGS_FOLDER, 
-        float(param_values['r0']), 
-        float(param_values['a0']), 
-        float(param_values['a']), 
-        float(param_values['k']), 
-        float(param_values['L']), 
-        float(param_values['s']), 
-        float(param_values['n']), 
-        float(param_values['q']), 
-        float(param_values['va']), 
-        float(param_values['va0']), 
-        float(param_values['vk']), 
-        float(param_values['vs']), 
-        float(param_values['vn']), 
-        float(param_values['vq']), 
-        float(param_values['mfp']), 
-        float(param_values['mr']), 
-        verbose=False
+        CONFIGS_FOLDER,
+        formatted_params['r0'], formatted_params['a0'], formatted_params['a'], formatted_params['k'],
+        formatted_params['L'], formatted_params['s'], formatted_params['n'], formatted_params['q'],
+        formatted_params['va'], formatted_params['u_va0'], formatted_params['u_vk'], formatted_params['u_vs'],
+        formatted_params['u_vn'], formatted_params['mfp'], formatted_params['mr'], verbose=False
     ):
         print("Failed to generate config.")
         return 1e6
 
-
-    if not generate_abec_file(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=False):
+    if not generate_abec_file(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=True):
         print("Failed to generate ABEC file.")
         return 1e6
 
@@ -195,25 +167,24 @@ def objective(params):
         print(f"FR Rating: {fr_rating}")
     except Exception as e:
         print(f"Error calculating FR rating: {e}")
-        
+
     # Calculate size deviation penalty
     try:
         radius = calculate_radius(
-            float(param_values['a0']), 
-            float(param_values['a']), 
-            float(param_values['r0']), 
-            float(param_values['k']), 
-            float(param_values['L']), 
-            float(param_values['s']), 
-            float(param_values['n']), 
-            float(param_values['q'])
+            formatted_params['a0'], 
+            formatted_params['a'], 
+            formatted_params['r0'], 
+            formatted_params['k'], 
+            formatted_params['L'], 
+            formatted_params['s'], 
+            formatted_params['n'], 
+            formatted_params['q']
         )
         size_penalty = abs(radius - target_size)
         print(f"Calculated radius: {radius:.2f}, Target: {target_size}, Penalty: {size_penalty:.2f}")
     except Exception as e:
         print(f"Error calculating radius: {e}")
         size_penalty = 1e6  # High penalty for errors
-
 
     # Combine DI rating with other ratings
     total_rating = di_rating + fr_rating + size_penalty
@@ -280,8 +251,8 @@ if not invalid_points:
         result = gp_minimize(
             func=objective,            # Objective function to minimize
             dimensions=space,          # Only include parameters with ranges
-            n_calls=20,               # Number of evaluations
-            n_initial_points=16,      # Initial random evaluations before using model predictions
+            n_calls=512,               # Number of evaluations
+            n_initial_points=256,      # Initial random evaluations before using model predictions
             acq_func="gp_hedge",       # Acquisition function, Expected Improvement
             acq_optimizer="auto",      # Automatically select optimizer for acquisition
             #n_restarts_optimizer=10,
@@ -295,8 +266,8 @@ if not invalid_points:
         result = gp_minimize(
             func=objective,            # Objective function to minimize
             dimensions=space,          # Only include parameters with ranges
-            n_calls=20,               # Number of evaluations
-            n_initial_points=16,      # Initial random evaluations before using model predictions
+            n_calls=512,               # Number of evaluations
+            n_initial_points=256,      # Initial random evaluations before using model predictions
             acq_func="gp_hedge",       # Acquisition function, Expected Improvement
             acq_optimizer="auto",      # Automatically select optimizer for acquisition
             #n_restarts_optimizer=10,
