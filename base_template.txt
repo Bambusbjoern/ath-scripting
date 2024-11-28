@@ -88,7 +88,7 @@ ABEC.MeshFrequency = 1000   ; [Hz]
 
 ABEC.Polars:SPL_H = {{
 	MapAngleRange = 0,180,37
-	NormAngle = 10    ; [deg]
+	_NormAngle = 10    ; [deg]
 	Distance = 2      ; [m]
 	_Offset = 99       ; [mm]
 	_Inclination = 0
@@ -96,7 +96,7 @@ ABEC.Polars:SPL_H = {{
 
 ABEC.Polars:SPL_V = {{
 	MapAngleRange = 0,180,37
-	NormAngle = 10
+	_NormAngle = 10
 	Distance = 2
 	_Offset = 99       ; [mm]
 	Inclination = 90
@@ -107,11 +107,11 @@ Output.ABECProject = 1
 
 Report = {{
   Title = "ATH report. All praise mabat!"
-  _NormAngle = 10
+  NormAngle = 10
   Width = 1800
   Height = 1200
   SPL_Range = 50
   MaxRadius = 180
   PolarData = SPL_H
-  _PolarDataV = SPL_V
+  PolarDataV = SPL_V
 }}
