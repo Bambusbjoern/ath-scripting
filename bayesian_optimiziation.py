@@ -138,7 +138,7 @@ def objective(params):
         print("Failed to generate config.")
         return 1e6
 
-    if not generate_abec_file(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=True):
+    if not generate_abec_file(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=False):
         print("Failed to generate ABEC file.")
         return 1e6
 
