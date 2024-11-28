@@ -228,19 +228,19 @@ def solver_with_retry(abec_window):
 
 # Calculate spectra after verifying progress pixel color
 def calculate_spectra():
-    time.sleep(15)
+    time.sleep(5)
     print("Pressing F7 to calculate spectra...")
     pyautogui.press('f7')
 
     # Wait for the progress pixel to indicate calculation progress
     if monitor_calculation_progress():
-        time.sleep(2.5)
+        time.sleep(1.0)
         print("Pressing Ctrl + F7 to finalize spectra...")
         pyautogui.hotkey('ctrl', 'f7')
-        time.sleep(1.5)
+        time.sleep(1.0)
         print("Pressing Enter to confirm the popup...")
         pyautogui.press('enter')
-        time.sleep(3)
+        time.sleep(5)
         print("Closing the program with Alt + F4...")
         pyautogui.hotkey('alt', 'f4')
         time.sleep(1.25)
