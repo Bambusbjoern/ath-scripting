@@ -39,10 +39,10 @@ def generate_waveguide_config(configs_folder, r0, a0, a, k, L, s, n, q, va, u_va
             base_template_content = file.read()
 
         # Calculate derived parameters
-        va0 = - a0 + u_va0 * 60 # Derived parameter for va0
-        vk = -k + u_vk * 10     # Derived parameter for vk
-        vs = -s + u_vs * 2      # Derived parameter for vs
-        vn = 2 - n + u_vn * 8  # Derived parameter for vn
+        va0 = -(- a0 + u_va0 * 60) # Derived parameter for va0
+        vk = -(-k + u_vk * 10)     # Derived parameter for vk
+        vs = -(-s + u_vs * 2)      # Derived parameter for vs
+        vn = -(2 - n + u_vn * 8)  # Derived parameter for vn
 
         # Generate config content
         config_content = base_template_content.format(
