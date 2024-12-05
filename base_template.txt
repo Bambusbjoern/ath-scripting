@@ -10,7 +10,7 @@ OSSE = {{  ; horizontal waveguide section
 }}
 
 _Mesh.ZMapElementSize = 0.1,0.3,0.25,0.85
-Mesh.ZMapPoints = 0.3,0.2,0.7,0.9
+Mesh.ZMapPoints = 0.4,0.2,0.6,0.8
 
 _Source.Contours = {{
   dome WG0 22 5 3 -1 3 1
@@ -19,7 +19,7 @@ _Source.Contours = {{
 Source.Contours = {{
 zoff 0
 point	p1 4.9 0 4
-point	p2 0.75 10.5 0.75
+point	p2 0.75 10.5 0.5
 point	p3 0 10.5 1
 point	p4 -0.25 10.75 1
 point	p5 0 11 1
@@ -55,13 +55,13 @@ Source.Velocity = 2   ; axial motion
 
 
 Mesh.Enclosure = {{
-  Spacing = 30,30,30,30
-  Depth = 200
-  EdgeRadius = 30
-  EdgeType = 1
-  
-  FrontResolution = 7,7,7,7,
-  BackResolution = 20,20,20,20
+    Spacing = 32,32,32,32
+    Depth = 200
+    EdgeRadius = 32
+    EdgeType = 1
+
+    FrontResolution = 7,7,7,7,
+    BackResolution = 24,24,24,24
 }}
 
 
@@ -86,32 +86,47 @@ ABEC.NumFrequencies = 37
 ABEC.MeshFrequency = 1000   ; [Hz]
 
 
+ABEC.Polars:SPL = {{
+	MapAngleRange = 0,90,19
+	NormAngle = 0    ; [deg]
+	Distance = 2
+	Offset = {L} + 10      ; [mm]
+}}
+
+_Report = {{
+  Title = "ATH report. All praise mabat!"
+  NormAngle = 0
+  Width = 1200
+  Height = 800
+  SPL_Range = 50
+  MaxRadius = 90
+  PolarData = "SPL"
+}}
+
 ABEC.Polars:SPL_H = {{
-	MapAngleRange = 0,180,37
-	_NormAngle = 10    ; [deg]
+	MapAngleRange = 0,90,19
+	NormAngle = 0    ; [deg]
 	Distance = 2      ; [m]
-	_Offset = 99       ; [mm]
-	_Inclination = 0
+	Offset = {L} + 10      ; [mm]
+	  FRDExport = {{
+        NamePrefix = hor
+        PhaseComp = -2.0     ;[m]
+        }}
 }}
 
 ABEC.Polars:SPL_V = {{
-	MapAngleRange = 0,180,37
-	_NormAngle = 10
+	MapAngleRange = 0,90,19
+	NormAngle = 0
 	Distance = 2
-	_Offset = 99       ; [mm]
+	Offset = {L} + 10      ; [mm]
 	Inclination = 90
+        FRDExport = {{
+            NamePrefix = ver
+            PhaseComp = -2.0     ;[m]
+            }}
 }}
 
 Output.STL = 0
 Output.ABECProject = 1
 
-Report = {{
-  Title = "ATH report. All praise mabat!"
-  NormAngle = 10
-  Width = 1800
-  Height = 1200
-  SPL_Range = 50
-  MaxRadius = 180
-  PolarData = SPL_H
-  PolarDataV = SPL_V
-}}
+

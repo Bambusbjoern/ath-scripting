@@ -19,10 +19,24 @@ def generate_report(configs_folder, ath_exe_path, config_filename, verbose=False
         config_path = os.path.join(configs_folder, config_filename)
         command = [ath_exe_path, config_path, "-r"]
 
-        # Run the command and capture output
+        # Ensure working directory is set to the executable's folder
+        cwd = os.path.dirname(ath_exe_path)
+
         if verbose:
-            print(f"Running: {' '.join(command)}")
-        result = subprocess.run(command, capture_output=True, text=True)
+            print(f"ATH executable path: {ath_exe_path}")
+            print(f"Configuration file path: {config_path}")
+            print(f"Command to execute: {' '.join(command)}")
+            print(f"Working directory: {cwd}")
+
+        # Run the command
+        env = os.environ.copy()
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=env  # Pass environment variables
+        )
 
         # Check the result
         if result.returncode == 0:
@@ -31,7 +45,9 @@ def generate_report(configs_folder, ath_exe_path, config_filename, verbose=False
             return True
         else:
             if verbose:
-                print(f"Error running {config_filename}: {result.stderr}")
+                print(f"Command failed with return code: {result.returncode}")
+                print(f"STDOUT: {result.stdout}")
+                print(f"STDERR: {result.stderr}")
             return False
     except Exception as e:
         if verbose:

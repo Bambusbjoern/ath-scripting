@@ -138,6 +138,9 @@ def objective(params):
         print("Failed to generate config.")
         return 1e6
 
+    # Retrieve simulation folder and type
+    simulation_folder, sim_type = get_simulation_folder_type("base_template.txt")
+
     if not generate_abec_file(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=False):
         print("Failed to generate ABEC file.")
         return 1e6
@@ -146,7 +149,7 @@ def objective(params):
         print("Failed to run ABEC simulation.")
         return 1e6
 
-    if not generate_report(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=False):
+    if not generate_report(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=True):
         print("Failed to generate report.")
         return 1e6
 
