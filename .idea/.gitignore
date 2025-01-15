@@ -1,3 +1,15 @@
 # Default ignored files
 /shelf/
 /workspace.xml
+
+# Ignore specific folders
+/configs/
+/demos/
+/docs/
+/export/
+/lib/
+
+# Ignore specific files
+ath.cfg
+ath.exe
+ath_dome_template.cfg
