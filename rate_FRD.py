@@ -8,6 +8,8 @@ from sklearn.linear_model import LinearRegression
 # Set file paths
 POLARS_FILE = #####
 
+print("how does git work?")
+
 # Define the frequency ranges
 fit_frequency_range = (6000, 10000)
 rating_frequency_range = (2000, 14000)
