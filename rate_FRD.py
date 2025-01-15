@@ -2,9 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-import os
 
-# Rate Frequency Response from the FRDExport option. Prefixes hor and ver.
+#  Rate Frequency Response from the FRDExport option. Prefixes hor and ver.
 
 # Set file paths
 POLARS_FILE = #####
