@@ -50,7 +50,6 @@ def generate_waveguide_config(configs_folder, filename, r0, a0, a, k, L, s, n, q
             va=va, va0=va0, vk=vk, vs=vs, vn=vn, mfp=mfp, mr=mr
         )
 
-        # Define the filename based on normalized parameters (u_va0, u_vk, u_vs, u_vn)
 
         # Generate the folder name if needed
         foldername = filename.replace('.cfg', '')
