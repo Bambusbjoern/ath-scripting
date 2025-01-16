@@ -1,7 +1,7 @@
 import os
 
 
-def generate_waveguide_config(configs_folder, r0, a0, a, k, L, s, n, q, va, u_va0, u_vk, u_vs, u_vn, mfp, mr, verbose=False):
+def generate_waveguide_config(configs_folder, filename, r0, a0, a, k, L, s, n, q, va, u_va0, u_vk, u_vs, u_vn, mfp, mr, verbose=False):
     """
     Generates a waveguide configuration file based on provided parameters.
 
@@ -51,13 +51,6 @@ def generate_waveguide_config(configs_folder, r0, a0, a, k, L, s, n, q, va, u_va
         )
 
         # Define the filename based on normalized parameters (u_va0, u_vk, u_vs, u_vn)
-        filename = (
-            f"L{L:.1f}A{a:.0f}R{r0:.0f}"
-            f"A0{a0:.1f}K{k:.1f}S{s:.1f}"
-            f"Q{q:.3f}N{n:.1f}UVA0{u_va0:.3f}"
-            f"UVK{u_vk:.3f}UVS{u_vs:.3f}UVN{u_vn:.3f}"
-            f"M{mfp:.2f}MR{mr:.1f}.cfg"
-        )
 
         # Generate the folder name if needed
         foldername = filename.replace('.cfg', '')
