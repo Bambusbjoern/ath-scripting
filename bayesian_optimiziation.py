@@ -11,9 +11,10 @@ from generate_report import generate_report
 from rate_DI import rate_DI
 from rate_FR import rate_frequency_response
 from get_simulation_folder_type import get_simulation_folder_type
-from skopt.utils import check_x_in_space
 from copy_results import copy_results
 from rate_target_size import calculate_radius
+from database_helper import initialize_db, get_completed_simulations, insert_params, update_rating
+
 
 # Load configuration to get the results folder path
 config = configparser.ConfigParser()
@@ -22,6 +23,8 @@ RESULTS_FOLDER = config["Paths"]["RESULTS_FOLDER"]
 HORNS_FOLDER = config["Paths"]["HORNS_FOLDER"]
 ATH_EXE_PATH = config["Paths"]["ATH_EXE_PATH"]
 CONFIGS_FOLDER = config["Paths"]["CONFIGS_FOLDER"]
+
+initialize_db("waveguides.db")
 
 # Initialize lists for fixed parameters, optimization space, and variable parameter names
 fixed_params = {}
@@ -59,30 +62,11 @@ add_param('u_vn', 0.0, 1.0)   # Normalized range for vn
 target_size = 65
 
 
-# Pattern to parse the .png filenames for parameter values and ratings
-filename_pattern = re.compile(
-    r"(?P<rating>[\d.]+)_L(?P<L>[\d.]+)A(?P<a>[\d.]+)R(?P<r0>[\d.]+)"
-    r"A0(?P<a0>[\d.]+)K(?P<k>[\d.]+)S(?P<s>[\d.]+)"
-    r"Q(?P<q>[\d.]+)N(?P<n>[\d.]+)"
-    r"UVA0(?P<u_va0>[\d.]+)UVK(?P<u_vk>[\d.]+)UVS(?P<u_vs>[\d.]+)"
-    r"UVN(?P<u_vn>[\d.]+)M(?P<mfp>[\d.]+)MR(?P<mr>[\d.]+)\.png"
-)
 
-# Load previous results from the results folder
-previous_results_count = 0
-for filename in os.listdir(RESULTS_FOLDER):
-    match = filename_pattern.match(filename)
-    if match:
-        params = match.groupdict()
-        rating = float(params.pop("rating"))  # Extract rating
+# Ergebnisse aus der Datenbank laden
+x0, y0 = get_completed_simulations(db_path="waveguides.db")
+print(f"Successfully loaded {len(x0)} previous simulation result(s) from the database")
 
-        # Extract only variable parameters in the correct order for `space`
-        params_ordered = [float(params[name]) for name in variable_names]
-        x0.append(params_ordered)  # Append the ordered parameter set
-        y0.append(rating)  # Append the rating
-        previous_results_count += 1
-
-print(f"Successfully read {previous_results_count} previous result(s) from {RESULTS_FOLDER}")
 
 # Function to create a marker file for failed waveguides
 def create_marker_file(results_folder, foldername, rating):
@@ -118,25 +102,21 @@ def objective(params):
         'mr': float(f"{param_values['mr']:.2f}")
     }
 
-    filename = (
-        f"L{formatted_params['L']:.1f}A{formatted_params['a']:.0f}R{formatted_params['r0']:.0f}"
-        f"A0{formatted_params['a0']:.1f}K{formatted_params['k']:.1f}S{formatted_params['s']:.1f}"
-        f"Q{formatted_params['q']:.3f}N{formatted_params['n']:.1f}UVA0{formatted_params['u_va0']:.3f}"
-        f"UVK{formatted_params['u_vk']:.3f}UVS{formatted_params['u_vs']:.3f}UVN{formatted_params['u_vn']:.3f}"
-        f"M{formatted_params['mfp']:.2f}MR{formatted_params['mr']:.1f}.cfg"
-    )
-    foldername = filename.replace('.cfg', '')
+    # --- Hier wird der Datenbankteil integriert ---
+    # Füge den Datensatz in die Datenbank ein und erhalte die neue ID
+    config_id = insert_params(formatted_params, db_path="waveguides.db")
+    # Verwende die ID als Dateinamen, z.B. "123.cfg"
+    filename = f"{config_id}.cfg"
+    foldername = str(config_id)  # Optional: Nutze die ID auch als Ordnername
 
-    # Pass normalized parameters directly to `generate_waveguide_config`
+    # Rufe die Funktion zum Erzeugen der Konfiguration auf und übergebe die ID
     if not generate_waveguide_config(
-        CONFIGS_FOLDER,
-        formatted_params['r0'], formatted_params['a0'], formatted_params['a'], formatted_params['k'],
-        formatted_params['L'], formatted_params['s'], formatted_params['n'], formatted_params['q'],
-        formatted_params['va'], formatted_params['u_va0'], formatted_params['u_vk'], formatted_params['u_vs'],
-        formatted_params['u_vn'], formatted_params['mfp'], formatted_params['mr'], verbose=False
+        CONFIGS_FOLDER, filename, config_id, verbose=False
     ):
         print("Failed to generate config.")
         return 1e6
+    # --- Ende Datenbankintegration ---
+
 
     # Retrieve simulation folder and type
     simulation_folder, sim_type = get_simulation_folder_type("base_template.txt")
@@ -153,9 +133,17 @@ def objective(params):
         print("Failed to generate report.")
         return 1e6
 
+
     # Initialize ratings
     di_rating = 1e6  # High penalty by default
     fr_rating = 1e6  # High penalty by default
+    
+    try:
+        # Calculate FR rating
+        fr_rating = rate_frequency_response(HORNS_FOLDER, foldername, simulation_folder, verbose=False)
+        print(f"FR Rating: {fr_rating}")
+    except Exception as e:
+        print(f"Error calculating FR rating: {e}")
 
     try:
         # Calculate DI rating
@@ -164,12 +152,6 @@ def objective(params):
     except Exception as e:
         print(f"Error calculating DI rating: {e}")
 
-    try:
-        # Calculate FR rating
-        fr_rating = rate_frequency_response(HORNS_FOLDER, foldername, simulation_folder, verbose=False)
-        print(f"FR Rating: {fr_rating}")
-    except Exception as e:
-        print(f"Error calculating FR rating: {e}")
 
     # Calculate size deviation penalty
     try:
@@ -193,6 +175,9 @@ def objective(params):
     total_rating = di_rating + fr_rating + size_penalty
     print(f"Total Rating: {total_rating}")
 
+
+    update_rating(config_id, total_rating, db_path="waveguides.db")
+
     # Attempt to copy results
     try:
         png_file_path = os.path.join(HORNS_FOLDER, foldername, simulation_folder, "Results", f"{foldername}.png")
@@ -204,6 +189,7 @@ def objective(params):
         print(f"Error copying results: {e}")
 
     return total_rating
+
 
 # Function to calculate waveguide size based on given parameters
 def calculate_y_at_L(a0_deg, a_deg, r0, k, L, s, n, q):

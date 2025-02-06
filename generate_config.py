@@ -1,68 +1,71 @@
 import os
+from database_helper import get_params_by_id  # Importiere die Funktion, die die Parameter abruft
 
-
-def generate_waveguide_config(configs_folder, filename, r0, a0, a, k, L, s, n, q, va, u_va0, u_vk, u_vs, u_vn, mfp, mr, verbose=False):
+def generate_waveguide_config(configs_folder, filename, config_id, verbose=False):
     """
-    Generates a waveguide configuration file based on provided parameters.
+    Erzeugt eine Konfigurationsdatei, indem die Parameter aus der Datenbank anhand der ID abgerufen werden.
 
-    Parameters:
-    - configs_folder (str): Path to the folder where configuration files should be saved.
-    - r0: Radius parameter.
-    - a0: Angle a0 in degrees.
-    - a: Angle a in degrees.
-    - k: Constant k.
-    - L: Length L.
-    - s: Parameter s.
-    - n: Parameter n.
-    - q: Parameter q.
-    - va: Fixed parameter for vertical angle.
-    - u_va0: Normalized parameter for va0.
-    - u_vk: Normalized parameter for vk.
-    - u_vs: Normalized parameter for vs.
-    - u_vn: Normalized parameter for vn.
-    - mfp: Morphing fixed part.
-    - mr: Morphing rate.
-    - verbose (bool): If True, print additional debug information.
-
-    Returns:
-    - True if the configuration file was created successfully, False otherwise.
+    Parameter:
+    - configs_folder: Pfad, wo die Konfigurationsdateien gespeichert werden.
+    - filename: Dateiname, z.B. "123.cfg", basierend auf der config_id.
+    - config_id: Die ID, unter der die Parameter in der Datenbank gespeichert sind.
+    - verbose: Wenn True, werden detaillierte Informationen ausgegeben.
     """
     try:
-        # Ensure the output directory exists
+        # Rufe die Parameter aus der Datenbank ab
+        params = get_params_by_id(config_id, db_path="waveguides.db")
+        if not params:
+            if verbose:
+                print(f"Keine Parameter in der DB für ID={config_id}.")
+            return False
+
+        # Entpacke die Parameter aus dem Dictionary
+        r0 = params["r0"]
+        a0 = params["a0"]
+        a = params["a"]
+        k = params["k"]
+        L = params["L"]
+        s = params["s"]
+        n = params["n"]
+        q = params["q"]
+        va = params["va"]
+        u_va0 = params["u_va0"]
+        u_vk = params["u_vk"]
+        u_vs = params["u_vs"]
+        u_vn = params["u_vn"]
+        mfp = params["mfp"]
+        mr = params["mr"]
+
+        # Stelle sicher, dass der Ordner existiert, oder erstelle ihn
         if not os.path.exists(configs_folder):
             os.makedirs(configs_folder)
             if verbose:
                 print(f"Created directory: {configs_folder}")
 
-        # Load the base template content
+        # Lade das Basis-Template für die Konfigurationsdatei
         with open('base_template.txt', 'r') as file:
             base_template_content = file.read()
 
-        # Calculate derived parameters
-        va0 = round(-(- a0 + u_va0 * 60),2) # Derived parameter for va0
-        vk = round(-(-k + u_vk * 10),2)     # Derived parameter for vk
-        vs = round(-(-s + u_vs * 2),2)      # Derived parameter for vs
-        vn = round(-(2 - n + u_vn * 8),2)  # Derived parameter for vn
+        # Berechne ggf. abgeleitete Parameter, z.B.:
+        va0 = round(-(-a0 + u_va0 * 60), 2)  # Beispiel: abgeleiteter Parameter für va0
+        vk = round(-(-k + u_vk * 10), 2)  # Beispiel: abgeleiteter Parameter für vk
+        vs = round(-(-s + u_vs * 2), 2)  # Beispiel: abgeleiteter Parameter für vs
+        vn = round(-(2 - n + u_vn * 8), 2)  # Beispiel: abgeleiteter Parameter für vn
 
-        # Generate config content
+        # Fülle das Template mit den Werten
         config_content = base_template_content.format(
             r0=r0, a0=a0, a=a, k=k, L=L, s=s, n=n, q=q,
             va=va, va0=va0, vk=vk, vs=vs, vn=vn, mfp=mfp, mr=mr
         )
 
-
-        # Generate the folder name if needed
-        foldername = filename.replace('.cfg', '')
-
-        # Combine with the configs folder
+        # Schreibe den Inhalt in die Konfigurationsdatei
         filepath = os.path.join(configs_folder, filename)
-
-        # Write the configuration to a file
         with open(filepath, 'w') as config_file:
             config_file.write(config_content)
 
         if verbose:
             print(f"Created configuration file: {filepath}")
+
         return True
     except Exception as e:
         if verbose:
