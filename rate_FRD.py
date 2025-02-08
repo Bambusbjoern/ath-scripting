@@ -4,10 +4,11 @@ import glob
 import re
 import pandas as pd
 from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import HuberRegressor
 
-# Define the frequency ranges for fitting and rating
-fit_frequency_range = (2000, 5000)  # Frequencies (Hz) used to perform the linear fit
-rating_frequency_range = (2000, 20000)  # Frequencies (Hz) used to evaluate the deviation
+# Define the frequency ranges for fitting and rating.
+fit_frequency_range = (2000, 5000)  # Frequencies (Hz) used to perform the linear fit.
+rating_frequency_range = (2000, 20000)  # Frequencies (Hz) used to evaluate the deviation.
 
 # Define weightings for selected angles that should be rated.
 # Only these angles will be processed.
@@ -24,20 +25,40 @@ weightings_fr = {
 }
 
 
+#LinearRegression
+#def fit_line_log_scale(x, y):
+#    """
+#    Fits a linear model to the data on a logarithmic frequency scale.
+#    Returns the slope and intercept of the fitted line.
+#
+#    Parameters:
+#      x : array-like, frequencies.
+#      y : array-like, amplitude values.
+#    """
+#    log_x = np.log10(x)
+#    model = LinearRegression().fit(log_x.reshape(-1, 1), y)
+#    slope = model.coef_[0]
+#    intercept = model.intercept_
+#    return slope, intercept
+
+
+#HuberRegression
 def fit_line_log_scale(x, y):
     """
-    Fits a linear model to the data on a logarithmic frequency scale.
-    Returns the slope and intercept of the fitted line.
+    Fits a robust linear model to the data on a logarithmic frequency scale.
+    Returns the slope and intercept of the fitted line using HuberRegressor.
 
     Parameters:
       x : array-like, frequencies.
       y : array-like, amplitude values.
     """
-    log_x = np.log10(x)
-    model = LinearRegression().fit(log_x.reshape(-1, 1), y)
+    log_x = np.log10(x).reshape(-1, 1)
+    # Create a HuberRegressor instance (you can adjust the parameters if needed)
+    model = HuberRegressor().fit(log_x, y)
     slope = model.coef_[0]
     intercept = model.intercept_
     return slope, intercept
+
 
 
 def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose=True):
@@ -56,7 +77,7 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
           * The fit data (for frequencies between fit_frequency_range[0] and fit_frequency_range[1]).
           * The rating data (for frequencies between rating_frequency_range[0] and rating_frequency_range[1]).
       - A linear regression is performed on log10(frequency) vs. amplitude for the fit data.
-      - The average absolute deviation (in the rating range) is computed and weighted.
+      - The RMSE (root mean squared error) in the rating frequency range is computed and multiplied by the weighting.
 
     A high penalty (1000) is added if not enough data is present or if an error occurs.
 
@@ -103,7 +124,7 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
         weight = weightings_fr[angle_label]
 
         try:
-            # Load the data (assumes whitespace-separated values)
+            # Load the data (assumes whitespace-separated values).
             data = np.loadtxt(file)
             # If data has only one row, skip it with a penalty.
             if data.ndim == 1 or data.shape[0] < 2:
@@ -129,20 +150,21 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
                 # Predict the amplitudes in the rating frequency range.
                 log_rating_frequencies = np.log10(rating_frequencies)
                 predicted = slope * log_rating_frequencies + intercept
-                # Compute the average absolute deviation.
-                deviation = np.abs(rating_amplitudes - predicted)
-                deviation_rating = np.round(deviation.mean() * weight, 3)
+                # Compute RMSE.
+                mse = np.mean((rating_amplitudes - predicted) ** 2)
+                rmse = np.sqrt(mse)
+                deviation_rating = np.round(rmse * weight, 3)
                 total_rating += deviation_rating
                 if verbose:
-                    print(f"Angle {angle_label}: Deviation Rating = {deviation_rating:.4f}")
+                    print(f"Angle {angle_label}: RMSE Rating = {deviation_rating:.4f}")
             else:
                 if verbose:
                     print(f"Not enough data points for angle {angle_label} in fit or rating range.")
-                total_rating += 1000  # Penalty if insufficient data
+                total_rating += 1000  # Penalty if insufficient data.
         except Exception as e:
             if verbose:
                 print(f"Error processing angle {angle_label}: {e}")
-            total_rating += 1000  # Penalty for errors
+            total_rating += 1000  # Penalty for errors.
 
     return round(total_rating, 3)
 
@@ -150,9 +172,9 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
 # Example usage:
 if __name__ == "__main__":
     # These example values would typically be provided by your main workflow.
-    horns_folder = r"D:\ath\Horns"  # Base folder for Horns data
-    foldername = "2"  # Configuration number as a string (used in file naming)
-    simulation_folder = "ABEC_FreeStanding"  # Simulation folder type
+    horns_folder = r"D:\ath\Horns"  # Base folder for Horns data.
+    foldername = "2"  # Configuration number as a string (used in file naming).
+    simulation_folder = "ABEC_FreeStanding"  # Simulation folder type.
     verbose = True
 
     total_rating = rate_frequency_response(horns_folder, foldername, simulation_folder, verbose)
