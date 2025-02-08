@@ -10,6 +10,10 @@ config.read('config.ini')
 HORNS_FOLDER = config['Paths']['HORNS_FOLDER']
 CONFIGS_FOLDER = config['Paths']['CONFIGS_FOLDER']
 
+# Define the database file path (adjust if needed)
+DATABASE_FILE = "waveguides.db"
+
+
 # Function to clear out a folder
 def clear_folder(folder_path):
     if os.path.exists(folder_path):
@@ -23,6 +27,16 @@ def clear_folder(folder_path):
     else:
         print(f"Folder does not exist: {folder_path}")
 
+
+# Function to clear the database file
+def clear_database(db_path):
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        print(f"Cleared database file: {db_path}")
+    else:
+        print(f"Database file does not exist: {db_path}")
+
+
 # Main execution
 if __name__ == "__main__":
     # Clear out the Horns folder from config.ini
@@ -30,3 +44,6 @@ if __name__ == "__main__":
 
     # Clear out the Configs folder from config.ini
     clear_folder(CONFIGS_FOLDER)
+
+    # Clear the database file
+    clear_database(DATABASE_FILE)

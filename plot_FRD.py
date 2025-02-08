@@ -2,16 +2,17 @@ import os
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import re
 
-
-def plot_frequency_responses(config_number, sim_folder, horns_folder, results_folder, total_rating, config_id,
-                             params_dict):
+def plot_frequency_responses(config_number, sim_folder, horns_folder, results_folder, total_rating, config_id, params_dict):
     """
     Reads frequency response files from the Horns folder and creates a 2×2 figure:
 
-      - Top Left: Horizontal frequency responses (with x-axis set to data range and y-axis from -25dB to 5dB).
-      - Top Right: Vertical frequency responses (with x-axis set to data range and y-axis from -25dB to 5dB).
+      - Top Left: Horizontal frequency responses (with x-axis logarithmic, major ticks labeled at 1000, 2000, 5000, and 10000 Hz,
+                  with gridlines every 1000Hz; gridlines corresponding to these major ticks are solid while others are dotted),
+                  and y-axis from -25dB to 5dB).
+      - Top Right: Vertical frequency responses (with the same x-axis settings as above).
       - Bottom Left: (DI vs. Angle plot - currently non-functional and commented out).
       - Bottom Right: A table listing the waveguide parameters (one per line).
 
@@ -56,6 +57,9 @@ def plot_frequency_responses(config_number, sim_folder, horns_folder, results_fo
         match = re.search(pattern, os.path.basename(filename))
         return match.group(1) if match else "?"
 
+    # Define the major ticks that will be labeled.
+    major_ticks = [1000, 2000, 5000, 10000]
+
     # ---- Top Left: Horizontal Frequency Responses ----
     freq_min_h = float('inf')
     freq_max_h = float('-inf')
@@ -73,10 +77,22 @@ def plot_frequency_responses(config_number, sim_folder, horns_folder, results_fo
     axs[0, 0].set_title("Horizontal Frequency Responses")
     axs[0, 0].set_xlabel("Frequency (Hz)")
     axs[0, 0].set_ylabel("Amplitude (dB)")
-    axs[0, 0].grid(True)
-    axs[0, 0].legend(title="Angle", fontsize=8, title_fontsize=9)
     axs[0, 0].set_xlim(freq_min_h, freq_max_h)
     axs[0, 0].set_ylim(-25, 5)
+    axs[0, 0].set_xscale('log')
+    # Set major ticks only at specified frequencies.
+    axs[0, 0].xaxis.set_major_locator(ticker.FixedLocator(major_ticks))
+    axs[0, 0].xaxis.set_major_formatter(ticker.ScalarFormatter())
+    # Set minor ticks every 1000 Hz over the full range.
+    minor_ticks_h = np.arange(np.ceil(freq_min_h/1000)*1000, freq_max_h+1000, 1000)
+    axs[0, 0].xaxis.set_minor_locator(ticker.FixedLocator(minor_ticks_h))
+    # Disable labels on minor ticks.
+    axs[0, 0].xaxis.set_minor_formatter(ticker.NullFormatter())
+    # Draw grid: solid for major ticks, dotted for minor ticks.
+    axs[0, 0].grid(which='major', axis='x', linestyle='-', color='black', alpha=0.8)
+    axs[0, 0].grid(which='minor', axis='x', linestyle=':', color='gray', alpha=0.5)
+    axs[0, 0].grid(which='both', axis='y', linestyle='--', color='gray', alpha=0.5)
+    axs[0, 0].legend(title="Angle", fontsize=8, title_fontsize=9)
 
     # ---- Top Right: Vertical Frequency Responses ----
     freq_min_v = float('inf')
@@ -93,13 +109,24 @@ def plot_frequency_responses(config_number, sim_folder, horns_folder, results_fo
     axs[0, 1].set_title("Vertical Frequency Responses")
     axs[0, 1].set_xlabel("Frequency (Hz)")
     axs[0, 1].set_ylabel("Amplitude (dB)")
-    axs[0, 1].grid(True)
-    axs[0, 1].legend(title="Angle", fontsize=8, title_fontsize=9)
     axs[0, 1].set_xlim(freq_min_v, freq_max_v)
     axs[0, 1].set_ylim(-25, 5)
+    axs[0, 1].set_xscale('log')
+    # Set major ticks.
+    axs[0, 1].xaxis.set_major_locator(ticker.FixedLocator(major_ticks))
+    axs[0, 1].xaxis.set_major_formatter(ticker.ScalarFormatter())
+    # Set minor ticks every 1000 Hz.
+    minor_ticks_v = np.arange(np.ceil(freq_min_v/1000)*1000, freq_max_v+1000, 1000)
+    axs[0, 1].xaxis.set_minor_locator(ticker.FixedLocator(minor_ticks_v))
+    axs[0, 1].xaxis.set_minor_formatter(ticker.NullFormatter())
+    # Draw grid: solid for major ticks, dotted for minor ticks.
+    axs[0, 1].grid(which='major', axis='x', linestyle='-', color='black', alpha=0.8)
+    axs[0, 1].grid(which='minor', axis='x', linestyle=':', color='gray', alpha=0.5)
+    axs[0, 1].grid(which='both', axis='y', linestyle='--', color='gray', alpha=0.5)
+    axs[0, 1].legend(title="Angle", fontsize=8, title_fontsize=9)
 
     # ---- Bottom Left: Directivity Index (DI) vs. Angle ----
-    # This section is currently non-functional and has been commented out.
+    # (This section is currently non-functional and has been commented out.)
     """
     di_angles = []
     di_values = []
@@ -176,5 +203,4 @@ if __name__ == "__main__":
         "mr": 5.0
     }
 
-    plot_frequency_responses(config_number, sim_folder, horns_folder, results_folder, total_rating, config_id,
-                             params_dict)
+    plot_frequency_responses(config_number, sim_folder, horns_folder, results_folder, total_rating, config_id, params_dict)

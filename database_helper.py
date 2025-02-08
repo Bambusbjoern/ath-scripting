@@ -122,14 +122,7 @@ def get_params_by_id(config_id, db_path="waveguides.db"):
     return dict(zip(keys, row))
 
 
-
 def get_completed_simulations(db_path="waveguides.db"):
-    """
-    Liest alle Simulationen aus der Datenbank aus, die bereits ein Rating haben.
-    Rückgabe:
-      - Eine Liste von Parameterwerten (als Listen) und
-      - Eine Liste der zugehörigen Ratings.
-    """
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("""
@@ -139,15 +132,15 @@ def get_completed_simulations(db_path="waveguides.db"):
     """)
     rows = c.fetchall()
     conn.close()
-
-    x0 = []  # Parameterwerte (als Liste von Listen)
-    y0 = []  # Ratings
+    # Define keys in the order stored:
+    keys = ["r0", "a0", "a", "k", "L", "s", "n", "q", "va", "u_va0", "u_vk", "u_vs", "u_vn", "mfp", "mr"]
+    simulations = []
+    ratings = []
     for row in rows:
-        # Die ersten 15 Werte sind Parameter, der 16. das Rating
-        x0.append(list(row[:15]))
-        y0.append(row[15])
-    return x0, y0
-
+        sim = dict(zip(keys, row[:15]))
+        simulations.append(sim)
+        ratings.append(row[15])
+    return simulations, ratings
 
 
 def update_rating(config_id, rating, db_path="waveguides.db"):
