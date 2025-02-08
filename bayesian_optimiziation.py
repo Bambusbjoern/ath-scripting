@@ -43,7 +43,6 @@ def add_param(param_name, lower=None, upper=None):
         variable_names.append(param_name)
 
 # Populate fixed parameters and optimization space.
-# Note: With your current configuration, "a" is now variable.
 add_param('r0', 14.0, 14.0)
 add_param('L', 15.0, 40.0)
 add_param('a0', 0.0, 60.0)
