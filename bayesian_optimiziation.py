@@ -4,6 +4,7 @@ from skopt import gp_minimize
 from skopt.space import Real
 import configparser
 import re
+
 from generate_config import generate_waveguide_config
 from generate_abec_file import generate_abec_file
 from run_abec import run_abec_simulation
@@ -14,6 +15,14 @@ from copy_results import copy_results
 from rate_target_size import calculate_radius
 from database_helper import initialize_db, get_completed_simulations, insert_params, update_rating
 from plot_FRD import plot_frequency_responses  # import the plotting function
+
+# ------------------------------
+# USER-CONFIGURABLE THRESHOLD
+# ------------------------------
+# Any simulation (old or new) with a rating above this is considered invalid.
+# Old simulations above this threshold will be skipped.
+# New simulations that compute a rating above this threshold will be **clipped** to THRESHOLD_RATING.
+THRESHOLD_RATING = 23.0
 
 # Load configuration from config.ini
 config = configparser.ConfigParser()
@@ -26,19 +35,15 @@ CONFIGS_FOLDER = config["Paths"]["CONFIGS_FOLDER"]
 # Initialize the database (clear it beforehand when reconfiguring parameters)
 initialize_db("waveguides.db")
 
-# Initialize dictionaries for fixed parameters, optimization space, and variable parameter names
+# Prepare structures for fixed parameters, optimization space, and variable parameter names.
 fixed_params = {}
 space = []
-variable_names = []  # This will hold the names of parameters that are variable
-# (No need to initialize x0, y0 here, they will be loaded from the database)
+variable_names = []
 
-# Define parameter bounds directly and categorize parameters as fixed or variable
 def add_param(param_name, lower=None, upper=None):
     if lower == upper:
-        # Treat as fixed if the bounds are identical
         fixed_params[param_name] = lower
     else:
-        # Add to the optimization space and record as variable
         space.append(Real(lower, upper, name=param_name))
         variable_names.append(param_name)
 
@@ -51,7 +56,7 @@ add_param('k', 0.0, 10.0)
 add_param('s', 0.0, 2.0)
 add_param('q', 0.99, 1.0)
 add_param('n', 2.0, 10.0)
-add_param('va', 20, 20)
+add_param('va', 20.0, 20.0)
 add_param('mfp', 0.0, 0.0)
 add_param('mr', 1.0, 10.0)
 add_param('u_va0', 0.0, 1.0)
@@ -61,33 +66,45 @@ add_param('u_vn', 0.0, 1.0)
 
 target_size = 65
 
-# Load previous simulation results from the database.
-# (Make sure your database_helper.get_completed_simulations function returns a list of dictionaries.)
-simulations, y0 = get_completed_simulations(db_path="waveguides.db")
-print(f"Successfully loaded {len(simulations)} previous simulation result(s) from the database")
+# -----------------------------------------------------------
+# 1) LOAD PREVIOUS SIMULATIONS, IGNORING THOSE ABOVE THRESHOLD
+# -----------------------------------------------------------
+simulations, old_ratings = get_completed_simulations(db_path="waveguides.db")
+print(f"Successfully loaded {len(simulations)} previous simulation result(s) from the database.")
 
-# Build the optimization vector x0 using the current variable_names order.
-# This will extract values in the order defined by variable_names.
-x0 = [[sim[name] for name in variable_names] for sim in simulations]
+x0_filtered = []
+y0_filtered = []
+skipped_count = 0
 
-# (If there are no previous simulations, x0 may be empty. That is fine.)
+for sim_dict, rating in zip(simulations, old_ratings):
+    if rating <= THRESHOLD_RATING:
+        x_vector = [sim_dict[name] for name in variable_names]
+        x0_filtered.append(x_vector)
+        y0_filtered.append(rating)
+    else:
+        skipped_count += 1
+        print(f"Skipping old waveguide with rating {rating} above threshold {THRESHOLD_RATING}.")
 
-# Function to create a marker file for failed waveguides
+print(f"Using {len(x0_filtered)} data points after skipping {skipped_count} due to threshold.")
+x0, y0 = x0_filtered, y0_filtered
+
+# Function to create a marker file for failed waveguides.
 def create_marker_file(results_folder, foldername, rating):
     marker_filename = f"{rating:.2f}_{foldername}.png"
     marker_file_path = os.path.join(results_folder, marker_filename)
     with open(marker_file_path, "w") as marker_file:
-        marker_file.write(f"Rating: {rating}\n")  # Optionally include additional details
+        marker_file.write(f"Rating: {rating}\n")
         marker_file.write(f"Foldername: {foldername}\n")
     print(f"Created marker file for failed waveguide: {marker_filename}")
 
-# Inside the objective function
+# -----------------------------------------------------------
+# OBJECTIVE FUNCTION
+# -----------------------------------------------------------
 def objective(params):
-    # Unpack variable parameters from the optimizer and merge with fixed parameters.
-    param_values = {name: val for name, val in zip([d.name for d in space], params)}
-    param_values.update(fixed_params)  # Add the fixed parameters
+    # Unpack parameters and merge with fixed parameters.
+    param_values = {dim.name: val for dim, val in zip(space, params)}
+    param_values.update(fixed_params)
 
-    # Format parameters with the desired precision.
     formatted_params = {
         'r0': float(f"{param_values['r0']:.2f}"),
         'L': float(f"{param_values['L']:.2f}"),
@@ -106,44 +123,35 @@ def objective(params):
         'mr': float(f"{param_values['mr']:.2f}")
     }
 
-    # --- Database Integration ---
-    # Insert the new parameter set into the database and get its configuration ID.
+    # --- Database Integration: Insert new simulation data.
     config_id = insert_params(formatted_params, db_path="waveguides.db")
-    filename = f"{config_id}.cfg"  # Use the ID as the filename
-    foldername = str(config_id)      # And also as the folder name
+    filename = f"{config_id}.cfg"
+    foldername = str(config_id)
 
-    # Generate the configuration file.
     if not generate_waveguide_config(CONFIGS_FOLDER, filename, config_id, verbose=False):
         print("Failed to generate config.")
         return 1e6
-    # --- End Database Integration ---
 
-    # Retrieve simulation folder and type (from your template).
-    simulation_folder, sim_type = get_simulation_folder_type("base_template.txt")
-
+    sim_folder, sim_type = get_simulation_folder_type("base_template.txt")
     if not generate_abec_file(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=False):
         print("Failed to generate ABEC file.")
         return 1e6
-
     if not run_abec_simulation(foldername):
         print("Failed to run ABEC simulation.")
         return 1e6
-
     if not generate_report(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=True):
         print("Failed to generate report.")
         return 1e6
 
-    # Initialize ratings with a high penalty by default.
-    fr_rating = 1e4
-
+    # Compute the FR rating.
     try:
-        # Calculate the FR rating from the FRD folder data.
-        fr_rating = rate_frequency_response(HORNS_FOLDER, foldername, simulation_folder, verbose=False)
+        fr_rating = rate_frequency_response(HORNS_FOLDER, foldername, sim_folder, verbose=False)
         print(f"FR Rating: {fr_rating}")
     except Exception as e:
         print(f"Error calculating FR rating: {e}")
+        fr_rating = 1e4
 
-    # Calculate the size deviation penalty.
+    # Compute size penalty.
     try:
         radius = calculate_radius(
             formatted_params['a0'],
@@ -161,38 +169,41 @@ def objective(params):
         print(f"Error calculating radius: {e}")
         size_penalty = 1e6
 
-    # Combine ratings to compute the total rating.
-    total_rating = fr_rating + size_penalty  # + di_rating (DI is currently commented out)
+    total_rating = fr_rating + size_penalty
     print(f"Total Rating: {total_rating}")
 
-    # Update the rating in the database.
+    # If new simulation rating exceeds the threshold, clip it to the threshold.
+    if total_rating > THRESHOLD_RATING:
+        print(f"New simulation rating {total_rating} exceeds threshold {THRESHOLD_RATING} => clipping to threshold.")
+        total_rating = THRESHOLD_RATING+0.1
+
+    # Update the new rating in the database.
     update_rating(config_id, total_rating, db_path="waveguides.db")
 
-    # Call the plot_FRD function to generate and save the plot.
+    # Plot the frequency response.
     try:
-        # We pass the following:
-        # - The configuration number for plotting (here we use foldername, which equals config_id)
-        # - simulation_folder, HORNS_FOLDER, RESULTS_FOLDER, total_rating, config_id, and the parameter dictionary.
-        plot_frequency_responses(foldername, simulation_folder, HORNS_FOLDER, RESULTS_FOLDER,
-                                 total_rating, config_id, formatted_params)
+        plot_frequency_responses(
+            foldername, sim_folder,
+            HORNS_FOLDER, RESULTS_FOLDER,
+            total_rating, config_id,
+            formatted_params
+        )
     except Exception as e:
         print(f"Error generating FRD plot: {e}")
 
     return total_rating
 
-
-# Validate previous simulation results (x0) against the optimization space.
+# -----------------------------------------------------------
+# VALIDATE PREVIOUS DATA POINTS (OLD SIMULATIONS)
+# -----------------------------------------------------------
 invalid_points = []
 for i, point in enumerate(x0):
     out_of_bounds = False
     out_of_bounds_params = {}
-    for param_value, dimension in zip(point, space):
-        if not (dimension.low <= param_value <= dimension.high):
+    for val, dim in zip(point, space):
+        if not (dim.low <= val <= dim.high):
             out_of_bounds = True
-            out_of_bounds_params[dimension.name] = {
-                "value": param_value,
-                "bounds": (dimension.low, dimension.high)
-            }
+            out_of_bounds_params[dim.name] = {"value": val, "bounds": (dim.low, dim.high)}
     if out_of_bounds:
         invalid_points.append((i, point, out_of_bounds_params))
 
@@ -205,22 +216,45 @@ if invalid_points:
 else:
     print("All points in `x0` are within bounds.")
 
-# Proceed with Bayesian optimization only if all points are valid.
+# -----------------------------------------------------------
+# RUN BAYESIAN OPTIMIZATION (IF NO INVALID POINTS)
+# -----------------------------------------------------------
 if not invalid_points:
-    result = gp_minimize(
-        func=objective,
-        dimensions=space,
-        n_calls=384,
-        n_initial_points=256,
-        acq_func="gp_hedge",
-        acq_optimizer="auto",
-        initial_point_generator='sobol',
-        verbose=True,
-        n_jobs=-1
-    )
-    optimal_params = result.x
-    optimal_rating = result.fun
-    print("Optimal parameters:", optimal_params)
-    print("Optimal rating:", optimal_rating)
+    if x0 and y0:
+        print("Using valid old data points.")
+        result = gp_minimize(
+            func=objective,
+            dimensions=space,
+            x0=x0,
+            y0=y0,
+            n_calls=384,
+            n_initial_points=256,
+            acq_func="gp_hedge",
+            acq_optimizer="auto",
+            initial_point_generator='lhs',
+            verbose=True,
+            n_jobs=-1
+        )
+        optimal_params = result.x
+        optimal_rating = result.fun
+        print("Optimal parameters:", optimal_params)
+        print("Optimal rating:", optimal_rating)
+    else:
+        print("No valid previous data points. Starting fresh optimization.")
+        result = gp_minimize(
+            func=objective,
+            dimensions=space,
+            n_calls=384,
+            n_initial_points=256,
+            acq_func="gp_hedge",
+            acq_optimizer="auto",
+            initial_point_generator='sobol',
+            verbose=True,
+            n_jobs=-1
+        )
+        optimal_params = result.x
+        optimal_rating = result.fun
+        print("Optimal parameters:", optimal_params)
+        print("Optimal rating:", optimal_rating)
 else:
     print("Please adjust out-of-bounds points in `x0` to proceed with optimization.")
