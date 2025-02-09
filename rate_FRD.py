@@ -1,181 +1,268 @@
 import os
-import numpy as np
 import glob
 import re
+import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import HuberRegressor
 
-# Define the frequency ranges for fitting and rating.
-fit_frequency_range = (2000, 5000)  # Frequencies (Hz) used to perform the linear fit.
-rating_frequency_range = (2000, 20000)  # Frequencies (Hz) used to evaluate the deviation.
+# ---------------------------
+# USER-CONFIGURABLE VARIABLES
+# ---------------------------
 
-# Define weightings for selected angles that should be rated.
-# Only these angles will be processed.
-weightings_fr = {
-    '5°': 1,
-    '10°': 1,
-    '15°': 1,
-    '20°': 1,
-    '25°': 1,
-    '30°': 1,
-    '40°': 1,
-    '50°': 1,
-    '60°': 1
+# Which regression algorithm to use for fitting the (log10(freq), amplitude) data.
+# Possible options:
+#   - "linear"    => Ordinary Least Squares
+#   - "huber"     => HuberRegressor (robust to outliers)
+#   - "theilsen"  => TheilSenRegressor (robust to outliers)
+REGRESSION_ALGORITHM = "theilsen"
+
+# Which error aggregation metric to use in the rating.
+# Possible options:
+#   - "rmse"       => Root Mean Squared Error
+#   - "mae"        => Mean Absolute Error
+#   - "median"     => Median Absolute Error
+#   - "huber_loss" => Huber loss aggregator
+ERROR_METRIC = "rmse"
+
+# DELTA is used in multiple contexts if "huber" approaches are chosen:
+#   1) If you're using "huber" as the regression algorithm (HuberRegressor),
+#      you could pass 'epsilon=DELTA' to the constructor if you want (by default it's 1.35).
+#   2) If you're using "huber_loss" as the aggregator (ERROR_METRIC), DELTA determines the
+#      threshold between quadratic and linear penalty for outliers in the aggregator.
+#         - A smaller DELTA means you treat more values as outliers (less quadratic region).
+#         - A larger DELTA means you treat fewer values as outliers (larger quadratic region).
+DELTA = 1.35
+
+# Frequency ranges for fitting (used to train the line) and for rating (used to evaluate the deviation).
+fit_frequency_range = (2000, 8000)
+# You can define separate rating sub-ranges, each with its own weighting.
+rating_ranges = [
+    ((2000, 10000), 1.0),   # (freq_range, weight)
+    ((10001, 12000), 0.5),
+    ((12001, 20000), 0.3)
+]
+
+# Global weighting factors for horizontal and vertical responses:
+HOR_WEIGHT = 1.0
+VER_WEIGHT = 0.7
+
+# Define angle-based weightings for horizontal angles.
+angle_weight_hor = {
+    '5°': 1.0,
+    '10°': 1.0,
+    '15°': 1.0,
+    '20°': 1.0,
+    '25°': 1.0,
+    '30°': 1.0,
+    '40°': 0.5,
+    '50°': 0.5,
+    '60°': 0.5
 }
 
+# Define angle-based weightings for vertical angles.
+angle_weight_ver = {
+    '5°': 1.0,
+    '10°': 1.0,
+    '15°': 1.0,
+    '20°': 1.0,
+    '25°': 1.0,
+    '30°': 1.0,
+    '40°': 0.5,
+    '50°': 0.5,
+    '60°': 0.5
+}
 
-#LinearRegression
-#def fit_line_log_scale(x, y):
-#    """
-#    Fits a linear model to the data on a logarithmic frequency scale.
-#    Returns the slope and intercept of the fitted line.
-#
-#    Parameters:
-#      x : array-like, frequencies.
-#      y : array-like, amplitude values.
-#    """
-#    log_x = np.log10(x)
-#    model = LinearRegression().fit(log_x.reshape(-1, 1), y)
-#    slope = model.coef_[0]
-#    intercept = model.intercept_
-#    return slope, intercept
+# --------------------------
+# END USER-CONFIGURABLE VARS
+# --------------------------
 
+from sklearn.linear_model import LinearRegression, HuberRegressor, TheilSenRegressor
 
-#HuberRegression
-def fit_line_log_scale(x, y):
+def fit_line_log_scale(freq, amp):
     """
-    Fits a robust linear model to the data on a logarithmic frequency scale.
-    Returns the slope and intercept of the fitted line using HuberRegressor.
-
-    Parameters:
-      x : array-like, frequencies.
-      y : array-like, amplitude values.
+    Fits a (log10(freq), amplitude) line using the user-selected algorithm.
+    Returns (slope, intercept).
     """
-    log_x = np.log10(x).reshape(-1, 1)
-    # Create a HuberRegressor instance (you can adjust the parameters if needed)
-    model = HuberRegressor().fit(log_x, y)
+    log_x = np.log10(freq).reshape(-1, 1)
+
+    if REGRESSION_ALGORITHM.lower() == "linear":
+        model = LinearRegression().fit(log_x, amp)
+    elif REGRESSION_ALGORITHM.lower() == "theilsen":
+        model = TheilSenRegressor().fit(log_x, amp)
+    else:
+        # Default to "huber"
+        model = HuberRegressor().fit(log_x, amp)
+
     slope = model.coef_[0]
     intercept = model.intercept_
     return slope, intercept
 
+def compute_errors(predicted, observed):
+    """
+    Returns an array of errors: observed - predicted.
+    """
+    return observed - predicted
 
+def huber_loss(errors, delta=1.0):
+    """
+    Compute elementwise Huber loss for an array of errors.
+    L_delta(a) = 0.5*a^2       if |a| <= delta
+                 delta*(|a| - 0.5*delta) otherwise
+
+    The parameter 'delta' controls the threshold at which we switch
+    from quadratic to linear penalty for large errors.
+    """
+    abs_err = np.abs(errors)
+    quad_part = 0.5 * errors**2
+    lin_part = delta * (abs_err - 0.5*delta)
+    return np.where(abs_err <= delta, quad_part, lin_part)
+
+def aggregate_errors(errors):
+    """
+    Applies the user-selected ERROR_METRIC to the given array of errors
+    and returns a single float rating for those errors.
+    """
+    if ERROR_METRIC.lower() == "rmse":
+        mse = np.mean(errors**2)
+        return np.sqrt(mse)
+    elif ERROR_METRIC.lower() == "mae":
+        return np.mean(np.abs(errors))
+    elif ERROR_METRIC.lower() == "median":
+        return np.median(np.abs(errors))
+    elif ERROR_METRIC.lower() == "huber_loss":
+        # Use our custom huber_loss function:
+        loss_values = huber_loss(errors, delta=DELTA)
+        return np.mean(loss_values)
+    else:
+        # Default to RMSE
+        mse = np.mean(errors**2)
+        return np.sqrt(mse)
 
 def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose=True):
     """
-    Rates the frequency response based on horizontal response files in the FRD folder.
+    Rates the frequency response. For each horizontal or vertical file:
+      1) Identify angle and direction (hor_deg+X or ver_deg+X).
+      2) Use angle_weight_hor or angle_weight_ver for angle weighting.
+      3) Multiply by HOR_WEIGHT or VER_WEIGHT, respectively.
+      4) For each sub-range in rating_ranges, compute predicted vs. observed,
+         gather errors, apply aggregator, multiply by sub-range's weighting,
+         sum => partial rating for that file.
+      5) Summation of partial ratings over all sub-ranges => final file rating.
+      6) Sum across all files => total rating.
 
-    This function expects to find horizontal files in:
-      horns_folder / foldername / simulation_folder / "Results" / "FRD"
-    Files should follow the naming scheme: "{foldername}__hor_deg+<angle>.txt"
-    Each file must contain three columns: frequency, amplitude, and phase.
+    A high penalty (1000) is added if not enough data is present or if any error occurs.
 
-    For each file:
-      - The angle is extracted from the filename.
-      - Only files corresponding to angles specified in weightings_fr are processed.
-      - Data is filtered to obtain two subsets:
-          * The fit data (for frequencies between fit_frequency_range[0] and fit_frequency_range[1]).
-          * The rating data (for frequencies between rating_frequency_range[0] and rating_frequency_range[1]).
-      - A linear regression is performed on log10(frequency) vs. amplitude for the fit data.
-      - The RMSE (root mean squared error) in the rating frequency range is computed and multiplied by the weighting.
-
-    A high penalty (1000) is added if not enough data is present or if an error occurs.
-
-    Returns:
-      The total rating (a lower rating is better).
+    Return:
+      total_rating (float), where lower is better.
     """
-    # Construct the path to the FRD folder.
     frd_path = os.path.join(horns_folder, foldername, simulation_folder, "Results", "FRD")
     if not os.path.exists(frd_path):
         if verbose:
             print(f"FRD folder not found: {frd_path}")
-        return 10000  # High penalty if folder is missing
+        return 10000
 
-    # Find all horizontal response files using glob.
     hor_pattern = os.path.join(frd_path, f"{foldername}__hor_deg+*.txt")
+    ver_pattern = os.path.join(frd_path, f"{foldername}__ver_deg+*.txt")
     horizontal_files = sorted(glob.glob(hor_pattern))
+    vertical_files = sorted(glob.glob(ver_pattern))
 
-    if len(horizontal_files) == 0:
+    if not horizontal_files and not vertical_files:
         if verbose:
-            print("No horizontal frequency response files found.")
-        return 10000  # High penalty if no files found
+            print("No frequency response files found.")
+        return 10000
 
     total_rating = 0.0
 
-    # Process each horizontal file.
-    for file in horizontal_files:
-        # Extract the angle from the filename.
-        # Expected filename example: "2__hor_deg+15.txt"
-        match = re.search(rf"{foldername}__hor_deg\+(\d+)\.txt", os.path.basename(file))
-        if match:
-            angle_label = match.group(1) + "°"
-        else:
+    def process_file(file, angle_weights, global_dir_weight):
+        nonlocal total_rating
+
+        # Extract angle from filename
+        match = re.search(rf"{foldername}__(?:hor|ver)_deg\+(\d+)\.txt", os.path.basename(file))
+        if not match:
             if verbose:
                 print(f"Could not extract angle from filename: {file}")
-            continue
+            total_rating += 1000
+            return
 
-        # Only rate files with angles specified in weightings_fr.
-        if angle_label not in weightings_fr:
+        angle_label = match.group(1) + "°"
+        if angle_label not in angle_weights:
             if verbose:
-                print(f"Skipping angle {angle_label} as it is not in the rating list.")
-            continue
+                print(f"Skipping angle {angle_label}, not in angle_weights.")
+            return
 
-        # Get the weighting for this angle.
-        weight = weightings_fr[angle_label]
+        # Combine angle weighting with the global weighting for direction
+        final_angle_weight = angle_weights[angle_label] * global_dir_weight
 
+        # Load the data
         try:
-            # Load the data (assumes whitespace-separated values).
             data = np.loadtxt(file)
-            # If data has only one row, skip it with a penalty.
-            if data.ndim == 1 or data.shape[0] < 2:
-                if verbose:
-                    print(f"Not enough data in file for angle {angle_label}.")
-                total_rating += 1000
-                continue
-
-            frequencies = data[:, 0]
-            amplitudes = data[:, 1]
-
-            # Filter data for the fit frequency range.
-            fit_mask = (frequencies >= fit_frequency_range[0]) & (frequencies <= fit_frequency_range[1])
-            rating_mask = (frequencies >= rating_frequency_range[0]) & (frequencies <= rating_frequency_range[1])
-            fit_frequencies = frequencies[fit_mask]
-            fit_amplitudes = amplitudes[fit_mask]
-            rating_frequencies = frequencies[rating_mask]
-            rating_amplitudes = amplitudes[rating_mask]
-
-            if len(fit_frequencies) > 1 and len(rating_frequencies) > 1:
-                # Perform the linear regression on the log10 scale.
-                slope, intercept = fit_line_log_scale(fit_frequencies, fit_amplitudes)
-                # Predict the amplitudes in the rating frequency range.
-                log_rating_frequencies = np.log10(rating_frequencies)
-                predicted = slope * log_rating_frequencies + intercept
-                # Compute RMSE.
-                mse = np.mean((rating_amplitudes - predicted) ** 2)
-                rmse = np.sqrt(mse)
-                deviation_rating = np.round(rmse * weight, 3)
-                total_rating += deviation_rating
-                if verbose:
-                    print(f"Angle {angle_label}: RMSE Rating = {deviation_rating:.4f}")
-            else:
-                if verbose:
-                    print(f"Not enough data points for angle {angle_label} in fit or rating range.")
-                total_rating += 1000  # Penalty if insufficient data.
         except Exception as e:
             if verbose:
-                print(f"Error processing angle {angle_label}: {e}")
-            total_rating += 1000  # Penalty for errors.
+                print(f"Error reading {file}: {e}")
+            total_rating += 1000
+            return
+
+        if data.ndim == 1 or data.shape[0] < 2:
+            if verbose:
+                print(f"Not enough data in file for angle {angle_label}.")
+            total_rating += 1000
+            return
+
+        freq = data[:, 0]
+        amp = data[:, 1]
+
+        # Fit range
+        fit_mask = (freq >= fit_frequency_range[0]) & (freq <= fit_frequency_range[1])
+        fit_freq = freq[fit_mask]
+        fit_amp = amp[fit_mask]
+
+        if fit_freq.size < 2:
+            if verbose:
+                print(f"Not enough data points in fit range for angle {angle_label}.")
+            total_rating += 1000
+            return
+
+        # Fit the line on log10 scale
+        slope, intercept = fit_line_log_scale(fit_freq, fit_amp)
+
+        # Now compute partial rating for each sub-range
+        file_rating = 0.0
+        for (freq_range, freq_w) in rating_ranges:
+            lo, hi = freq_range
+            mask = (freq >= lo) & (freq <= hi)
+            sub_freq = freq[mask]
+            sub_amp = amp[mask]
+            if sub_freq.size < 2:
+                if verbose:
+                    print(f"No data in rating range {freq_range} for angle {angle_label}.")
+                file_rating += 1000
+                continue
+
+            predicted = slope * np.log10(sub_freq) + intercept
+            errs = sub_amp - predicted
+            # Use the aggregator:
+            sub_err_value = aggregate_errors(errs)
+            # Weighted by freq_w and final_angle_weight
+            partial = sub_err_value * freq_w * final_angle_weight
+            file_rating += partial
+
+        total_rating += file_rating
+
+    # Process horizontal files
+    for file in horizontal_files:
+        process_file(file, angle_weight_hor, HOR_WEIGHT)
+
+    # Process vertical files
+    for file in vertical_files:
+        process_file(file, angle_weight_ver, VER_WEIGHT)
 
     return round(total_rating, 3)
 
-
 # Example usage:
 if __name__ == "__main__":
-    # These example values would typically be provided by your main workflow.
-    horns_folder = r"D:\ath\Horns"  # Base folder for Horns data.
-    foldername = "2"  # Configuration number as a string (used in file naming).
-    simulation_folder = "ABEC_FreeStanding"  # Simulation folder type.
+    horns_folder = r"D:\ath\Horns"
+    foldername = "2"
+    simulation_folder = "ABEC_FreeStanding"
     verbose = True
 
-    total_rating = rate_frequency_response(horns_folder, foldername, simulation_folder, verbose)
-    print(f"Total Frequency Response Rating: {total_rating}")
+    rating = rate_frequency_response(horns_folder, foldername, simulation_folder, verbose=verbose)
+    print(f"Final rating for simulation {foldername}: {rating}")
