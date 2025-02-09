@@ -210,8 +210,8 @@ if not invalid_points:
     result = gp_minimize(
         func=objective,
         dimensions=space,
-        n_calls=256,
-        n_initial_points=128,
+        n_calls=384,
+        n_initial_points=256,
         acq_func="gp_hedge",
         acq_optimizer="auto",
         initial_point_generator='sobol',
