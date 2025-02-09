@@ -36,9 +36,9 @@ DELTA = 1.35
 fit_frequency_range = (2000, 10000)
 # You can define separate rating sub-ranges, each with its own weighting.
 rating_ranges = [
-    ((2000, 10000), 1.5),   # (freq_range, weight)
-    ((10001, 14000), 0.2),
-    ((14001, 20000), 0.1)
+    ((2000, 8000), 1.5),   # (freq_range, weight)
+    ((8001, 12000), 0.5),
+    ((12001, 20000), 0.1)
 ]
 
 # Global weighting factors for horizontal and vertical responses:
