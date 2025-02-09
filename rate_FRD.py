@@ -13,7 +13,7 @@ import pandas as pd
 #   - "linear"    => Ordinary Least Squares
 #   - "huber"     => HuberRegressor (robust to outliers)
 #   - "theilsen"  => TheilSenRegressor (robust to outliers)
-REGRESSION_ALGORITHM = "theilsen"
+REGRESSION_ALGORITHM = "linear"
 
 # Which error aggregation metric to use in the rating.
 # Possible options:
@@ -21,7 +21,7 @@ REGRESSION_ALGORITHM = "theilsen"
 #   - "mae"        => Mean Absolute Error
 #   - "median"     => Median Absolute Error
 #   - "huber_loss" => Huber loss aggregator
-ERROR_METRIC = "rmse"
+ERROR_METRIC = "median"
 
 # DELTA is used in multiple contexts if "huber" approaches are chosen:
 #   1) If you're using "huber" as the regression algorithm (HuberRegressor),
@@ -33,17 +33,17 @@ ERROR_METRIC = "rmse"
 DELTA = 1.35
 
 # Frequency ranges for fitting (used to train the line) and for rating (used to evaluate the deviation).
-fit_frequency_range = (2000, 8000)
+fit_frequency_range = (2000, 10000)
 # You can define separate rating sub-ranges, each with its own weighting.
 rating_ranges = [
-    ((2000, 10000), 1.0),   # (freq_range, weight)
-    ((10001, 12000), 0.5),
-    ((12001, 20000), 0.3)
+    ((2000, 10000), 1.5),   # (freq_range, weight)
+    ((10001, 14000), 0.2),
+    ((14001, 20000), 0.1)
 ]
 
 # Global weighting factors for horizontal and vertical responses:
 HOR_WEIGHT = 1.0
-VER_WEIGHT = 0.7
+VER_WEIGHT = 0.5
 
 # Define angle-based weightings for horizontal angles.
 angle_weight_hor = {
@@ -62,13 +62,11 @@ angle_weight_hor = {
 angle_weight_ver = {
     '5°': 1.0,
     '10°': 1.0,
-    '15°': 1.0,
     '20°': 1.0,
-    '25°': 1.0,
     '30°': 1.0,
-    '40°': 0.5,
-    '50°': 0.5,
-    '60°': 0.5
+    '40°': 1.0,
+    '50°': 1.0,
+    '60°': 1.0,
 }
 
 # --------------------------
