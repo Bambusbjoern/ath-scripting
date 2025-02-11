@@ -232,7 +232,7 @@ if not invalid_points:
             acq_func="gp_hedge",
             acq_optimizer="auto",
             initial_point_generator='lhs',
-            n_jobs=16
+            n_jobs=16,
             verbose=True,
 
         )
@@ -250,7 +250,7 @@ if not invalid_points:
             acq_func="gp_hedge",
             acq_optimizer="auto",
             initial_point_generator='sobol',
-            n_jobs=16
+            n_jobs=16,
             verbose=True,
 
         )
