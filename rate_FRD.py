@@ -13,7 +13,7 @@ import pandas as pd
 #   - "linear"    => Ordinary Least Squares
 #   - "huber"     => HuberRegressor (robust to outliers)
 #   - "theilsen"  => TheilSenRegressor (robust to outliers)
-REGRESSION_ALGORITHM = "linear"
+REGRESSION_ALGORITHM = "huber"
 
 # Which error aggregation metric to use in the rating.
 # Possible options:
@@ -21,7 +21,7 @@ REGRESSION_ALGORITHM = "linear"
 #   - "mae"        => Mean Absolute Error
 #   - "median"     => Median Absolute Error
 #   - "huber_loss" => Huber loss aggregator
-ERROR_METRIC = "median"
+ERROR_METRIC = "rmse"
 
 # DELTA is used in multiple contexts if "huber" approaches are chosen:
 #   1) If you're using "huber" as the regression algorithm (HuberRegressor),
@@ -33,7 +33,7 @@ ERROR_METRIC = "median"
 DELTA = 1.35
 
 # Frequency ranges for fitting (used to train the line) and for rating (used to evaluate the deviation).
-fit_frequency_range = (2000, 10000)
+fit_frequency_range = (3000, 10000)
 # You can define separate rating sub-ranges, each with its own weighting.
 rating_ranges = [
     ((2000, 8000), 1.5),   # (freq_range, weight)

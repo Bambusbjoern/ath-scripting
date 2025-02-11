@@ -15,7 +15,7 @@ PLOT_FITTED_LINES = True
 
 # The frequency range to use for fitting the line (e.g., the same as your rate script).
 # We'll fit only data in [FIT_LO, FIT_HI], then plot that line across the entire data range.
-FIT_LO = 2000
+FIT_LO = 3000
 FIT_HI = 10000
 
 # If you prefer ordinary linear regression, set USE_HUBER = False
@@ -107,7 +107,7 @@ def plot_frequency_responses(config_number, sim_folder, horns_folder, results_fo
         freq_max_h = max(freq_max_h, freq.max())
 
         # Make 15° and 30° thicker
-        lw = 2.5 if angle in ["15", "30"] else 1.0
+        lw = 2.5 if angle in ["15", "30", "45", "60"] else 1.0
         # Plot the main response
         line_obj = axs[0, 0].plot(freq, amp, label=f"{angle}°", lw=lw)
         color_used = line_obj[0].get_color()
