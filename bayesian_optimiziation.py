@@ -22,7 +22,7 @@ from plot_FRD import plot_frequency_responses  # import the plotting function
 # Any simulation (old or new) with a rating above this is considered invalid.
 # Old simulations above this threshold will be skipped.
 # New simulations that compute a rating above this threshold will be **clipped** to THRESHOLD_RATING.
-THRESHOLD_RATING = 23.0
+THRESHOLD_RATING = 99.0
 
 # Load configuration from config.ini
 config = configparser.ConfigParser()
@@ -227,13 +227,14 @@ if not invalid_points:
             dimensions=space,
             x0=x0,
             y0=y0,
-            n_calls=384,
-            n_initial_points=256,
+            n_calls=256,
+            n_initial_points=128,
             acq_func="gp_hedge",
             acq_optimizer="auto",
             initial_point_generator='lhs',
+            n_jobs=16
             verbose=True,
-            n_jobs=-1
+
         )
         optimal_params = result.x
         optimal_rating = result.fun
@@ -244,13 +245,14 @@ if not invalid_points:
         result = gp_minimize(
             func=objective,
             dimensions=space,
-            n_calls=384,
-            n_initial_points=256,
+            n_calls=256,
+            n_initial_points=128,
             acq_func="gp_hedge",
             acq_optimizer="auto",
             initial_point_generator='sobol',
+            n_jobs=16
             verbose=True,
-            n_jobs=-1
+
         )
         optimal_params = result.x
         optimal_rating = result.fun
