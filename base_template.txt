@@ -56,7 +56,7 @@ Source.Velocity = 2   ; axial motion
 
 Mesh.Enclosure = {{
     Spacing = 32,32,32,32
-    Depth = 200
+    Depth = 160
     EdgeRadius = 32
     EdgeType = 1
 
@@ -69,20 +69,20 @@ Mesh.Enclosure = {{
 Mesh.Quadrants = 1        ; =1 for 1/4 symmetry, 
 ;Mesh.VerticalOffset = 80
 
-Mesh.AngularSegments = 64
-Mesh.LengthSegments = 14
+Mesh.AngularSegments = 80
+Mesh.LengthSegments = 18
 Mesh.SubdomainSlices =
 
 Mesh.ThroatResolution = 3
-Mesh.MouthResolution = 6
-Mesh.InterfaceResolution = 5
-Mesh.RearResolution = 20
+Mesh.MouthResolution = 7
+Mesh.InterfaceResolution = 6
+;Mesh.RearResolution = 20
 
 
 ABEC.SimType = 2 ; 1 = Infinite Baffle, 2 = Free Standing
 ABEC.f1 = 1000   ; [Hz]
 ABEC.f2 = 20000  ; [Hz]
-ABEC.NumFrequencies = 37
+ABEC.NumFrequencies = 51
 ABEC.MeshFrequency = 1000   ; [Hz]
 
 
@@ -93,7 +93,7 @@ ABEC.Polars:SPL = {{
 	Offset = {L} + 10      ; [mm]
 }}
 
-_Report = {{
+Report = {{
   Title = "ATH report. All praise mabat!"
   NormAngle = 0
   Width = 1200
