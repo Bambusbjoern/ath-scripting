@@ -22,7 +22,7 @@ from plot_FRD import plot_frequency_responses  # import the plotting function
 # Any simulation (old or new) with a rating above this is considered invalid.
 # Old simulations above this threshold will be skipped.
 # New simulations that compute a rating above this threshold will be **clipped** to THRESHOLD_RATING.
-THRESHOLD_RATING = 99.0
+THRESHOLD_RATING = 999.0
 
 # Load configuration from config.ini
 config = configparser.ConfigParser()
@@ -50,15 +50,15 @@ def add_param(param_name, lower=None, upper=None):
 # Populate fixed parameters and optimization space.
 add_param('r0', 14.0, 14.0)
 add_param('L', 15.0, 40.0)
-add_param('a0', 0.0, 60.0)
+add_param('a0', 0, 60.0)
 add_param('a', 40.0, 75.0)
 add_param('k', 0.0, 10.0)
 add_param('s', 0.0, 2.0)
 add_param('q', 0.99, 1.0)
 add_param('n', 2.0, 10.0)
 add_param('va', 20.0, 20.0)
-add_param('mfp', 0.0, 0.0)
-add_param('mr', 1.0, 10.0)
+add_param('mfp', -10.0, 0.0) #using this as ZOFF here!
+add_param('mr', 2.0, 2.0)
 add_param('u_va0', 0.0, 1.0)
 add_param('u_vk', 0.0, 1.0)
 add_param('u_vs', 0.0, 1.0)
