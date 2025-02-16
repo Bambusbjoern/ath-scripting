@@ -14,8 +14,8 @@ from sklearn.linear_model import LinearRegression, HuberRegressor, TheilSenRegre
 REGRESSION_ALGORITHM = "huber"
 
 # Which error aggregation metric to use in the rating.
-# Options: "rmse", "mae", "median", "huber_loss"
-ERROR_METRIC = "rmse"
+# Options: "rmse", "mae", "median", "huber_loss", "SFM"
+ERROR_METRIC = "SFM"
 
 # DELTA is used if "huber_loss" is selected as the aggregator.
 DELTA = 1.35
@@ -24,9 +24,9 @@ DELTA = 1.35
 fit_frequency_range = (3000, 10000)
 # Define separate rating sub-ranges, each with its own weight.
 rating_ranges = [
-    ((3000, 8000), 1.0),   # (frequency range, weight)
-    ((8001, 12000), 1.0),
-    ((12001, 20000), 0.3)
+    ((3000, 8000), 200.0),   # (frequency range, weight) #100
+    ((8001, 12000), 50.0), #50
+    ((12001, 20000), 10.0) #10
 ]
 
 # Global weighting factors for amplitude ratings.
@@ -34,7 +34,7 @@ HOR_WEIGHT = 1.0
 VER_WEIGHT = 0.8
 
 # Global weighting factor for slope ratings.
-GLOBAL_SLOPE_WEIGHT = 0.1
+GLOBAL_SLOPE_WEIGHT = 0.0
 
 # Define angle-based weightings for amplitude ratings.
 angle_weight_hor = {
@@ -125,10 +125,6 @@ def fit_line_log_scale(freq, amp):
     intercept = model.intercept_
     return slope, intercept
 
-def compute_errors(predicted, observed):
-    """Returns observed - predicted."""
-    return observed - predicted
-
 def huber_loss(errors, delta=1.0):
     """
     Compute elementwise Huber loss.
@@ -140,31 +136,66 @@ def huber_loss(errors, delta=1.0):
     lin_part = delta * (abs_err - 0.5 * delta)
     return np.where(abs_err <= delta, quad_part, lin_part)
 
-def aggregate_errors(errors):
+def compute_sfm(amp_db):
     """
-    Aggregates errors based on the selected ERROR_METRIC.
+    Compute spectral flatness in dB from an array of amplitude in dB.
+    - A perfectly flat region → 0 dB.
+    - Negative values → less flat (peaks/dips).
     """
-    if ERROR_METRIC.lower() == "rmse":
-        mse = np.mean(errors**2)
-        return np.sqrt(mse)
-    elif ERROR_METRIC.lower() == "mae":
-        return np.mean(np.abs(errors))
-    elif ERROR_METRIC.lower() == "median":
-        return np.median(np.abs(errors))
-    elif ERROR_METRIC.lower() == "huber_loss":
-        loss_values = huber_loss(errors, delta=DELTA)
-        return np.mean(loss_values)
+    # Convert from dB to linear (assuming amplitude in dB SPL).
+    amp_lin = 10**(amp_db / 20.0)
+    amp_lin = np.clip(amp_lin, 1e-12, None)
+
+    # Geometric mean of linear amplitudes
+    geo_mean = np.exp(np.mean(np.log(amp_lin)))
+    # Arithmetic mean
+    arith_mean = np.mean(amp_lin)
+
+    if arith_mean <= 1e-12:
+        return -999.0  # degenerate case
+
+    sfm = geo_mean / arith_mean
+    sfm_db = 10.0 * np.log10(sfm)  # ratio to dB
+    return sfm_db
+
+def aggregate_metric(observed, predicted=None):
+    """
+    Aggregate the "error" based on the selected ERROR_METRIC.
+      - For "SFM", we ignore 'predicted' and compute spectral flatness from 'observed' in dB,
+        then return -SFM (so higher SFM → smaller 'error').
+      - For the other metrics, we compute an error array (observed - predicted) and apply
+        RMSE, MAE, Median, or Huber loss, as before.
+
+    Returns a single numeric rating (lower is better).
+    """
+    if ERROR_METRIC.lower() == "sfm":
+        # We interpret 'observed' as dB amplitude; ignoring predicted altogether
+        sfm_db = compute_sfm(observed)
+        return -sfm_db  # higher SFM yields a lower rating (reward)
     else:
-        mse = np.mean(errors**2)
-        return np.sqrt(mse)
+        # "rmse", "mae", "median", "huber_loss", etc.
+        errors = observed - predicted
+        if ERROR_METRIC.lower() == "rmse":
+            mse = np.mean(errors**2)
+            return np.sqrt(mse)
+        elif ERROR_METRIC.lower() == "mae":
+            return np.mean(np.abs(errors))
+        elif ERROR_METRIC.lower() == "median":
+            return np.median(np.abs(errors))
+        elif ERROR_METRIC.lower() == "huber_loss":
+            loss_values = huber_loss(errors, delta=DELTA)
+            return np.mean(loss_values)
+        else:
+            # Default to RMSE if user picks unknown metric
+            mse = np.mean(errors**2)
+            return np.sqrt(mse)
 
 def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose=True):
     """
     Rates the frequency response by processing both horizontal and vertical files.
     For each file, the rating includes:
-      1. Amplitude rating: computed over various frequency sub-ranges.
-      2. Slope rating: computed by comparing the fitted slope (in dB/octave) with the target.
-         The slope penalty is multiplied by both per-angle and a global slope weight.
+      1. Amplitude rating (deviation from fitted line or SFM)
+      2. Slope rating (difference from target slope)
     Returns a total rating (lower is better) and prints the contributions.
     """
     frd_path = os.path.join(horns_folder, foldername, simulation_folder, "Results", "FRD")
@@ -235,7 +266,7 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
         freq = data[:, 0]
         amp = data[:, 1]
 
-        # Create mask for the fit range.
+        # Create mask for the fit range (used for slope fitting).
         fit_mask = (freq >= fit_frequency_range[0]) & (freq <= fit_frequency_range[1])
         fit_freq = freq[fit_mask]
         fit_amp = amp[fit_mask]
@@ -245,23 +276,25 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
             total_rating += 1000
             return
 
-        # Fit the regression line.
-        slope, intercept = fit_line_log_scale(fit_freq, fit_amp)
-        # Compute the slope in dB per octave.
-        slope_db_octave = slope * np.log10(2)
+        # Fit the regression line to log10(freq)
+        slope_val, intercept = fit_line_log_scale(fit_freq, fit_amp)
+        # Compute slope in dB per octave
+        slope_db_octave = slope_val * np.log10(2)
         slope_error = abs(slope_db_octave - slope_target)
         slope_penalty = slope_error * slope_w * GLOBAL_SLOPE_WEIGHT
         if verbose:
-            print(f"Angle {angle_label}: Slope = {slope_db_octave:.3f} dB/octave, Target = {slope_target}, Slope Penalty = {slope_penalty:.3f}")
+            print(f"Angle {angle_label}: Slope = {slope_db_octave:.3f} dB/octave, "
+                  f"Target = {slope_target}, Slope Penalty = {slope_penalty:.3f}")
 
-        file_rating = slope_penalty  # Start file rating with slope penalty.
-        # Accumulate slope penalty separately.
+        file_rating = slope_penalty  # Start with slope penalty
+
+        # Accumulate slope penalty separately
         if is_horizontal:
             hor_slope_penalty += slope_penalty
         else:
             ver_slope_penalty += slope_penalty
 
-        # Process amplitude ratings for each frequency sub-range.
+        # Process amplitude or SFM for each frequency sub-range
         for (freq_range, freq_w) in rating_ranges:
             lo, hi = freq_range
             mask = (freq >= lo) & (freq <= hi)
@@ -273,28 +306,33 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
                 file_rating += 1000
                 continue
 
-            predicted = slope * np.log10(sub_freq) + intercept
-            errs = sub_amp - predicted
-            sub_err_value = aggregate_errors(errs)
+            if ERROR_METRIC.lower() == "sfm":
+                # SFM metric: ignore predicted line, compute directly from sub_amp
+                sub_err_value = aggregate_metric(observed=sub_amp)
+            else:
+                # Normal metrics: compare sub_amp to fitted line
+                predicted = slope_val * np.log10(sub_freq) + intercept
+                sub_err_value = aggregate_metric(observed=sub_amp, predicted=predicted)
+
             sub_partial = sub_err_value * freq_w * final_angle_weight
             file_rating += sub_partial
 
-        # Accumulate amplitude ratings.
+        # Accumulate amplitude-related rating (excluding slope penalty)
         if is_horizontal:
-            hor_amp_rating += file_rating - slope_penalty
+            hor_amp_rating += (file_rating - slope_penalty)
         else:
-            ver_amp_rating += file_rating - slope_penalty
+            ver_amp_rating += (file_rating - slope_penalty)
 
         total_rating += file_rating
 
-    # Process horizontal files.
+    # Process horizontal files
     for file in horizontal_files:
         process_file(file, angle_weight_hor, slope_weight_hor, HOR_WEIGHT, is_horizontal=True)
-    # Process vertical files.
+    # Process vertical files
     for file in vertical_files:
         process_file(file, angle_weight_ver, slope_weight_ver, VER_WEIGHT, is_horizontal=False)
 
-    # Print out detailed contributions regardless of verbose setting.
+    # Print out detailed contributions
     print("----- Frequency Response Rating Contributions -----")
     print(f"Horizontal Slope Penalty: {hor_slope_penalty:.3f}")
     print(f"Vertical Slope Penalty:   {ver_slope_penalty:.3f}")
