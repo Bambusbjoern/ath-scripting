@@ -49,15 +49,15 @@ def add_param(param_name, lower=None, upper=None):
 
 # Populate fixed parameters and optimization space.
 add_param('r0', 14.0, 14.0)
-add_param('L', 15.0, 40.0)
-add_param('a0', 0, 60.0)
-add_param('a', 40.0, 75.0)
-add_param('k', 0.0, 10.0)
-add_param('s', 0.0, 2.0)
+add_param('L', 18.0, 32.0)
+add_param('a0', 35, 60.0)
+add_param('a', 30.0, 65.0)
+add_param('k', 0.4, 8.0)
+add_param('s', 1.0, 2.0)
 add_param('q', 0.99, 1.0)
 add_param('n', 2.0, 10.0)
 add_param('va', 20.0, 20.0)
-add_param('mfp', -10.0, 0.0) #using this as ZOFF here!
+add_param('mfp', -4.0, -0.5)  # using this as ZOFF here!
 add_param('mr', 2.0, 2.0)
 add_param('u_va0', 0.0, 1.0)
 add_param('u_vk', 0.0, 1.0)
@@ -151,23 +151,26 @@ def objective(params):
         print(f"Error calculating FR rating: {e}")
         fr_rating = 1e4
 
-    # Compute size penalty.
-    try:
-        radius = calculate_radius(
-            formatted_params['a0'],
-            formatted_params['a'],
-            formatted_params['r0'],
-            formatted_params['k'],
-            formatted_params['L'],
-            formatted_params['s'],
-            formatted_params['n'],
-            formatted_params['q']
-        )
-        size_penalty = abs(radius - target_size)
-        print(f"Calculated radius: {radius:.2f}, Target: {target_size}, Penalty: {size_penalty:.2f}")
-    except Exception as e:
-        print(f"Error calculating radius: {e}")
-        size_penalty = 1e6
+    # Compute size penalty (functionality commented out)
+    # try:
+    #     radius = calculate_radius(
+    #         formatted_params['a0'],
+    #         formatted_params['a'],
+    #         formatted_params['r0'],
+    #         formatted_params['k'],
+    #         formatted_params['L'],
+    #         formatted_params['s'],
+    #         formatted_params['n'],
+    #         formatted_params['q']
+    #     )
+    #     size_penalty = abs(radius - target_size)
+    #     print(f"Calculated radius: {radius:.2f}, Target: {target_size}, Penalty: {size_penalty:.2f}")
+    # except Exception as e:
+    #     print(f"Error calculating radius: {e}")
+    #     size_penalty = 1e6
+    #
+    # For now, we disable the size penalty by setting it to zero.
+    size_penalty = 0
 
     total_rating = fr_rating + size_penalty
     print(f"Total Rating: {total_rating}")
@@ -175,7 +178,7 @@ def objective(params):
     # If new simulation rating exceeds the threshold, clip it to the threshold.
     if total_rating > THRESHOLD_RATING:
         print(f"New simulation rating {total_rating} exceeds threshold {THRESHOLD_RATING} => clipping to threshold.")
-        total_rating = THRESHOLD_RATING+0.1
+        total_rating = THRESHOLD_RATING + 0.1
 
     # Update the new rating in the database.
     update_rating(config_id, total_rating, db_path="waveguides.db")
@@ -183,7 +186,7 @@ def objective(params):
     # Plot the frequency response.
     try:
         plot_frequency_responses(
-            foldername, sim_folder,
+            foldername_new, sim_folder,
             HORNS_FOLDER, RESULTS_FOLDER,
             total_rating, config_id,
             formatted_params
@@ -232,9 +235,8 @@ if not invalid_points:
             acq_func="gp_hedge",
             acq_optimizer="auto",
             initial_point_generator='lhs',
-            n_jobs=16,
+            n_jobs=1,
             verbose=True,
-
         )
         optimal_params = result.x
         optimal_rating = result.fun
@@ -250,9 +252,8 @@ if not invalid_points:
             acq_func="gp_hedge",
             acq_optimizer="auto",
             initial_point_generator='sobol',
-            n_jobs=16,
+            n_jobs=1,
             verbose=True,
-
         )
         optimal_params = result.x
         optimal_rating = result.fun
