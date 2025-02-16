@@ -24,36 +24,41 @@ DELTA = 1.35
 fit_frequency_range = (3000, 10000)
 # Define separate rating sub-ranges, each with its own weight.
 rating_ranges = [
-    ((2000, 8000), 1.0),   # (frequency range, weight)
-    ((8001, 12000), 0.6),
+    ((3000, 8000), 1.0),   # (frequency range, weight)
+    ((8001, 12000), 1.0),
     ((12001, 20000), 0.3)
 ]
 
-# Global weighting factors for horizontal and vertical responses.
+# Global weighting factors for amplitude ratings.
 HOR_WEIGHT = 1.0
-VER_WEIGHT = 0.7
+VER_WEIGHT = 0.8
 
-# Define angle-based weightings for horizontal angles.
+# Global weighting factor for slope ratings.
+GLOBAL_SLOPE_WEIGHT = 0.1
+
+# Define angle-based weightings for amplitude ratings.
 angle_weight_hor = {
-    '5°': 1.0,
-    '10°': 1.0,
-    '15°': 1.0,
+    '5°': 0.8,
+    '10°': 0.8,
+    '15°': 0.8,
     '20°': 1.0,
     '25°': 1.0,
     '30°': 1.0,
-    '40°': 0.5,
-    '50°': 0.5,
-    '60°': 0.5
+    '40°': 1.0,
+    '50°': 1.0,
+    '60°': 1.0
 }
 
 angle_weight_ver = {
-    '5°': 1.0,
-    '10°': 1.0,
+    '5°': 0.8,
+    '10°': 0.8,
+    '15°': 0.8,
     '20°': 1.0,
+    '25°': 1.0,
     '30°': 1.0,
     '40°': 1.0,
     '50°': 1.0,
-    '60°': 1.0,
+    '60°': 1.0
 }
 
 # ---------------------------
@@ -63,17 +68,17 @@ angle_weight_ver = {
 TARGET_SLOPE_HOR = 0.0   # desired horizontal slope (dB/octave)
 TARGET_SLOPE_VER = 0.0   # desired vertical slope (dB/octave)
 
-# Instead of a single global slope weight, set per-angle slope weightings.
+# Per-angle slope weightings.
 slope_weight_hor = {
-    '5°': 1.0,
-    '10°': 1.0,
-    '15°': 1.0,
-    '20°': 1.0,
+    '5°': 0.8,
+    '10°': 0.8,
+    '15°': 0.8,
+    '20°': 0.8,
     '25°': 1.0,
     '30°': 1.0,
-    '40°': 0.8,
-    '50°': 0.7,
-    '60°': 0.6,
+    '40°': 1.0,
+    '50°': 1.0,
+    '60°': 1.0,
     '65°': 0.0,
     '70°': 0.0,
     '75°': 0.0,
@@ -83,15 +88,15 @@ slope_weight_hor = {
 }
 
 slope_weight_ver = {
-    '5°': 1.0,
-    '10°': 1.0,
-    '15°': 1.0,
-    '20°': 1.0,
+    '5°': 0.8,
+    '10°': 0.8,
+    '15°': 0.8,
+    '20°': 0.8,
     '25°': 0.5,
-    '30°': 0.5,
-    '40°': 0.5,
-    '50°': 0.5,
-    '60°': 0.5,
+    '30°': 1.0,
+    '40°': 1.0,
+    '50°': 1.0,
+    '60°': 1.0,
     '65°': 0.0,
     '70°': 0.0,
     '75°': 0.0,
@@ -156,11 +161,11 @@ def aggregate_errors(errors):
 def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose=True):
     """
     Rates the frequency response by processing both horizontal and vertical files.
-    For each file, the rating includes two contributions:
+    For each file, the rating includes:
       1. Amplitude rating: computed over various frequency sub-ranges.
       2. Slope rating: computed by comparing the fitted slope (in dB/octave) with the target.
-    The contributions are weighted by user-specified factors.
-    Returns a total rating (lower is better).
+         The slope penalty is multiplied by both per-angle and a global slope weight.
+    Returns a total rating (lower is better) and prints the contributions.
     """
     frd_path = os.path.join(horns_folder, foldername, simulation_folder, "Results", "FRD")
     if not os.path.exists(frd_path):
@@ -180,8 +185,14 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
 
     total_rating = 0.0
 
-    def process_file(file, angle_weights, slope_weights, global_dir_weight):
-        nonlocal total_rating
+    # Accumulators for individual contributions:
+    hor_slope_penalty = 0.0
+    ver_slope_penalty = 0.0
+    hor_amp_rating = 0.0
+    ver_amp_rating = 0.0
+
+    def process_file(file, angle_weights, slope_weights, global_dir_weight, is_horizontal=True):
+        nonlocal total_rating, hor_slope_penalty, ver_slope_penalty, hor_amp_rating, ver_amp_rating
 
         basename = os.path.basename(file)
         match = re.search(rf"{foldername}__(?:hor|ver)_deg\+(\d+)\.txt", basename)
@@ -197,16 +208,13 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
                 print(f"Skipping angle {angle_label}, not found in weighting dictionaries.")
             return
 
-        # Determine if file is horizontal or vertical.
-        if "hor_deg" in basename:
+        # Determine slope target and per-angle slope weight.
+        if is_horizontal:
             slope_target = TARGET_SLOPE_HOR
             slope_w = slope_weights.get(angle_label, 1.0)
-        elif "ver_deg" in basename:
+        else:
             slope_target = TARGET_SLOPE_VER
             slope_w = slope_weights.get(angle_label, 1.0)
-        else:
-            slope_target = 0.0
-            slope_w = 0.0
 
         final_angle_weight = angle_weights[angle_label] * global_dir_weight
 
@@ -227,7 +235,7 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
         freq = data[:, 0]
         amp = data[:, 1]
 
-        # Fit range mask for regression.
+        # Create mask for the fit range.
         fit_mask = (freq >= fit_frequency_range[0]) & (freq <= fit_frequency_range[1])
         fit_freq = freq[fit_mask]
         fit_amp = amp[fit_mask]
@@ -239,16 +247,21 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
 
         # Fit the regression line.
         slope, intercept = fit_line_log_scale(fit_freq, fit_amp)
-        # Compute slope in dB per octave (multiplying by log10(2)).
+        # Compute the slope in dB per octave.
         slope_db_octave = slope * np.log10(2)
         slope_error = abs(slope_db_octave - slope_target)
-        slope_penalty = slope_error * slope_w
+        slope_penalty = slope_error * slope_w * GLOBAL_SLOPE_WEIGHT
         if verbose:
             print(f"Angle {angle_label}: Slope = {slope_db_octave:.3f} dB/octave, Target = {slope_target}, Slope Penalty = {slope_penalty:.3f}")
 
         file_rating = slope_penalty  # Start file rating with slope penalty.
+        # Accumulate slope penalty separately.
+        if is_horizontal:
+            hor_slope_penalty += slope_penalty
+        else:
+            ver_slope_penalty += slope_penalty
 
-        # Compute amplitude rating over each frequency sub-range.
+        # Process amplitude ratings for each frequency sub-range.
         for (freq_range, freq_w) in rating_ranges:
             lo, hi = freq_range
             mask = (freq >= lo) & (freq <= hi)
@@ -266,14 +279,28 @@ def rate_frequency_response(horns_folder, foldername, simulation_folder, verbose
             sub_partial = sub_err_value * freq_w * final_angle_weight
             file_rating += sub_partial
 
+        # Accumulate amplitude ratings.
+        if is_horizontal:
+            hor_amp_rating += file_rating - slope_penalty
+        else:
+            ver_amp_rating += file_rating - slope_penalty
+
         total_rating += file_rating
 
     # Process horizontal files.
     for file in horizontal_files:
-        process_file(file, angle_weight_hor, slope_weight_hor, HOR_WEIGHT)
+        process_file(file, angle_weight_hor, slope_weight_hor, HOR_WEIGHT, is_horizontal=True)
     # Process vertical files.
     for file in vertical_files:
-        process_file(file, angle_weight_ver, slope_weight_ver, VER_WEIGHT)
+        process_file(file, angle_weight_ver, slope_weight_ver, VER_WEIGHT, is_horizontal=False)
+
+    # Print out detailed contributions regardless of verbose setting.
+    print("----- Frequency Response Rating Contributions -----")
+    print(f"Horizontal Slope Penalty: {hor_slope_penalty:.3f}")
+    print(f"Vertical Slope Penalty:   {ver_slope_penalty:.3f}")
+    print(f"Horizontal Amplitude Rating: {hor_amp_rating:.3f}")
+    print(f"Vertical Amplitude Rating:   {ver_amp_rating:.3f}")
+    print("-----------------------------------------------------")
 
     return round(total_rating, 3)
 
