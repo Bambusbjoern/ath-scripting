@@ -19,7 +19,7 @@ FIT_LO = 3000
 FIT_HI = 10000
 
 # If you prefer ordinary linear regression, set USE_HUBER = False
-USE_HUBER = False
+USE_HUBER = True
 
 # If using Huber, you can set the "epsilon" parameter for HuberRegressor here:
 HUBER_EPSILON = 1.35
@@ -156,7 +156,7 @@ def plot_frequency_responses(config_number, sim_folder, horns_folder, results_fo
         freq_min_v = min(freq_min_v, freq.min())
         freq_max_v = max(freq_max_v, freq.max())
 
-        lw = 2.5 if angle in ["15", "30"] else 1.0
+        lw = 2.5 if angle in ["15", "30", "45", "60"] else 1.0
         line_obj = axs[0, 1].plot(freq, amp, label=f"{angle}°", lw=lw)
         color_used = line_obj[0].get_color()
 

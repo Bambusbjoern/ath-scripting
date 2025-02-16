@@ -18,7 +18,7 @@ _Source.Contours = {{
 
 Source.Contours = {{
 zoff {mfp}
-point	p1 4.9 0 4
+point	p1 4.9 0 3.3
 point	p2 0.75 10.5 0.5
 point	p3 0 10.5 1
 point	p4 -0.25 10.75 1

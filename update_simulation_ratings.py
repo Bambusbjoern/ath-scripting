@@ -79,7 +79,7 @@ def update_ratings_for_all_simulations():
 
         # Recalculate the frequency response rating.
         try:
-            new_rating = rate_frequency_response(HORNS_FOLDER, foldername, SIMULATION_FOLDER, verbose=True)
+            new_rating = rate_frequency_response(HORNS_FOLDER, foldername, SIMULATION_FOLDER, verbose=False)
         except Exception as e:
             print(f"Error rating simulation {config_id}: {e}")
             new_rating = 10000  # Use 10000 as the flag for failure.
