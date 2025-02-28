@@ -18,13 +18,13 @@ _Source.Contours = {{
 
 Source.Contours = {{
 zoff {mfp}
-point	p1 4.9 0 3.3
-point	p2 0.75 10.5 0.5
-point	p3 0 10.5 1
-point	p4 -0.25 10.75 1
-point	p5 0 11 1
-point	p6 1 12 1
-point	p7 0 13 2
+point	p1 4.9 0 5
+point	p2 0.75 10.5 1.25
+point	p3 0 10.5 2.5
+point	p4 -0.25 10.75 2.5
+point	p5 0 11 2.5
+point	p6 1 12 2.5
+point	p7 0 13 5
 point	p8 0 14.5 5
 
 
@@ -47,35 +47,35 @@ Morph.TargetShape = 1
 Morph.FixedPart = {mfp}
 Morph.Rate = {mr}
 Morph.AllowShrinkage = 1
-Morph.TargetWidth = 130
-Morph.TargetHeight = 100
-Morph.CornerRadius = 5
+Morph.TargetWidth = 96.4
+Morph.TargetHeight = 103
+Morph.CornerRadius = 3
 
 Source.Velocity = 2   ; axial motion
 
 
 
 Mesh.Enclosure = {{
-    Spacing = 32,32,32,32
-    Depth = 160
-    EdgeRadius = 32
+    Spacing = 31.8,31.8,31.8,142
+    Depth = 148
+    EdgeRadius = 31.8
     EdgeType = 1
 
-    FrontResolution = 7,7,7,7,
+    FrontResolution = 10,10,10,10,
     BackResolution = 24,24,24,24
 }}
 
 
 
-Mesh.Quadrants = 1        ; =1 for 1/4 symmetry, 
+Mesh.Quadrants = 1        ; =1 for 1/4 symmetry,
 ;Mesh.VerticalOffset = 80
 
 Mesh.AngularSegments = 80
 Mesh.LengthSegments = 18
 Mesh.SubdomainSlices =
 
-Mesh.ThroatResolution = 3
-Mesh.MouthResolution = 7
+Mesh.ThroatResolution = 5
+Mesh.MouthResolution = 8
 Mesh.InterfaceResolution = 6
 ;Mesh.RearResolution = 20
 
@@ -121,6 +121,18 @@ ABEC.Polars:SPL_V = {{
 	Distance = 2
 	Offset = {L} + 10      ; [mm]
 	Inclination = 90
+        FRDExport = {{
+            NamePrefix = ver
+            PhaseComp = -2.0     ;[m]
+            }}
+}}
+
+ABEC.Polars:SPL_V_UP = {{
+	MapAngleRange = 0,90,19
+	NormAngle = 0
+	Distance = 2
+	Offset = {L} + 10      ; [mm]
+	Inclination = 270
         FRDExport = {{
             NamePrefix = ver
             PhaseComp = -2.0     ;[m]

@@ -26,7 +26,7 @@ def initialize_db(db_path="waveguides.db"):
             s REAL,       -- Parameter s
             n REAL,       -- Parameter n
             q REAL,       -- Parameter q
-            va REAL,      -- Parameter va
+            u_va REAL,    -- Parameter va
             u_va0 REAL,   -- Parameter u_va0 (normalisierter Wert)
             u_vk REAL,    -- Parameter u_vk
             u_vs REAL,    -- Parameter u_vs
@@ -46,7 +46,7 @@ def insert_params(param_values, db_path="waveguides.db"):
 
     Parameter:
     - param_values: Ein Dictionary, das die Parameter enthält. Die Keys sollten
-      u.a. "r0", "a0", "a", "k", "L", "s", "n", "q", "va", "u_va0", "u_vk", "u_vs",
+      u.a. "r0", "a0", "a", "k", "L", "s", "n", "q", "u_va", "u_va0", "u_vk", "u_vs",
       "u_vn", "mfp" und "mr" heißen.
     - db_path: Der Pfad zur Datenbankdatei (Standard: "waveguides.db").
 
@@ -60,7 +60,7 @@ def insert_params(param_values, db_path="waveguides.db"):
     # SQL-Befehl, um einen neuen Datensatz in die Tabelle einzufügen.
     c.execute("""
         INSERT INTO waveguide_params
-        (r0, a0, a, k, L, s, n, q, va, u_va0, u_vk, u_vs, u_vn, mfp, mr)
+        (r0, a0, a, k, L, s, n, q, u_va, u_va0, u_vk, u_vs, u_vn, mfp, mr)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         param_values["r0"],
@@ -71,7 +71,7 @@ def insert_params(param_values, db_path="waveguides.db"):
         param_values["s"],
         param_values["n"],
         param_values["q"],
-        param_values["va"],
+        param_values["u_va"],
         param_values["u_va0"],
         param_values["u_vk"],
         param_values["u_vs"],
@@ -106,7 +106,7 @@ def get_params_by_id(config_id, db_path="waveguides.db"):
 
     # SQL-Befehl, um den Datensatz mit der angegebenen ID auszuwählen.
     c.execute("""
-        SELECT r0, a0, a, k, L, s, n, q, va, u_va0, u_vk, u_vs, u_vn, mfp, mr
+        SELECT r0, a0, a, k, L, s, n, q, u_va, u_va0, u_vk, u_vs, u_vn, mfp, mr
         FROM waveguide_params WHERE id=?
     """, (config_id,))
 
@@ -118,7 +118,7 @@ def get_params_by_id(config_id, db_path="waveguides.db"):
         return None  # Wenn kein Datensatz gefunden wurde, None zurückgeben
 
     # Erstelle ein Dictionary, das die Parameter mit ihren Namen enthält.
-    keys = ["r0", "a0", "a", "k", "L", "s", "n", "q", "va", "u_va0", "u_vk", "u_vs", "u_vn", "mfp", "mr"]
+    keys = ["r0", "a0", "a", "k", "L", "s", "n", "q", "u_va", "u_va0", "u_vk", "u_vs", "u_vn", "mfp", "mr"]
     return dict(zip(keys, row))
 
 
@@ -126,14 +126,14 @@ def get_completed_simulations(db_path="waveguides.db"):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("""
-        SELECT r0, a0, a, k, L, s, n, q, va, u_va0, u_vk, u_vs, u_vn, mfp, mr, rating
+        SELECT r0, a0, a, k, L, s, n, q, u_va, u_va0, u_vk, u_vs, u_vn, mfp, mr, rating
         FROM waveguide_params
         WHERE rating IS NOT NULL
     """)
     rows = c.fetchall()
     conn.close()
     # Define keys in the order stored:
-    keys = ["r0", "a0", "a", "k", "L", "s", "n", "q", "va", "u_va0", "u_vk", "u_vs", "u_vn", "mfp", "mr"]
+    keys = ["r0", "a0", "a", "k", "L", "s", "n", "q", "u_va", "u_va0", "u_vk", "u_vs", "u_vn", "mfp", "mr"]
     simulations = []
     ratings = []
     for row in rows:

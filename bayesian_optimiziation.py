@@ -22,7 +22,7 @@ from plot_FRD import plot_frequency_responses  # import the plotting function
 # Any simulation (old or new) with a rating above this is considered invalid.
 # Old simulations above this threshold will be skipped.
 # New simulations that compute a rating above this threshold will be **clipped** to THRESHOLD_RATING.
-THRESHOLD_RATING = 999.0
+THRESHOLD_RATING = 9999.0
 
 # Load configuration from config.ini
 config = configparser.ConfigParser()
@@ -49,16 +49,16 @@ def add_param(param_name, lower=None, upper=None):
 
 # Populate fixed parameters and optimization space.
 add_param('r0', 14.0, 14.0)
-add_param('L', 18.0, 32.0)
-add_param('a0', 35, 60.0)
-add_param('a', 30.0, 65.0)
-add_param('k', 0.4, 8.0)
-add_param('s', 1.0, 2.0)
+add_param('L', 10.0, 32.0)
+add_param('a0', 0, 80.0)
+add_param('a', 0.0, 80.0)
+add_param('k', 0.0, 10.0)
+add_param('s', 0.0, 4.0)
 add_param('q', 0.99, 1.0)
-add_param('n', 2.0, 10.0)
-add_param('va', 20.0, 20.0)
-add_param('mfp', -4.0, -0.5)  # using this as ZOFF here!
+add_param('n', 1.0, 15.0)
+add_param('mfp', -4.0, -0.0)  # using this as ZOFF here!
 add_param('mr', 2.0, 2.0)
+add_param('u_va', 0.0, 1.0)
 add_param('u_va0', 0.0, 1.0)
 add_param('u_vk', 0.0, 1.0)
 add_param('u_vs', 0.0, 1.0)
@@ -114,7 +114,7 @@ def objective(params):
         's': float(f"{param_values['s']:.2f}"),
         'q': float(f"{param_values['q']:.3f}"),
         'n': float(f"{param_values['n']:.2f}"),
-        'va': float(f"{param_values['va']:.2f}"),
+        'u_va': float(f"{param_values['u_va']:.3f}"),
         'u_va0': float(f"{param_values['u_va0']:.3f}"),
         'u_vk': float(f"{param_values['u_vk']:.3f}"),
         'u_vs': float(f"{param_values['u_vs']:.3f}"),
@@ -186,7 +186,7 @@ def objective(params):
     # Plot the frequency response.
     try:
         plot_frequency_responses(
-            foldername_new, sim_folder,
+            foldername, sim_folder,
             HORNS_FOLDER, RESULTS_FOLDER,
             total_rating, config_id,
             formatted_params
@@ -230,12 +230,12 @@ if not invalid_points:
             dimensions=space,
             x0=x0,
             y0=y0,
-            n_calls=256,
-            n_initial_points=128,
+            n_calls=1312,
+            n_initial_points=0,
             acq_func="gp_hedge",
             acq_optimizer="auto",
             initial_point_generator='lhs',
-            n_jobs=1,
+            n_jobs=32,
             verbose=True,
         )
         optimal_params = result.x
@@ -247,12 +247,12 @@ if not invalid_points:
         result = gp_minimize(
             func=objective,
             dimensions=space,
-            n_calls=256,
-            n_initial_points=128,
+            n_calls=1312,
+            n_initial_points=768,
             acq_func="gp_hedge",
             acq_optimizer="auto",
             initial_point_generator='sobol',
-            n_jobs=1,
+            n_jobs=32,
             verbose=True,
         )
         optimal_params = result.x
