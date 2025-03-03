@@ -1,10 +1,18 @@
 import os
 import numpy as np
-from skopt import gp_minimize
-from skopt.space import Real
 import configparser
 import re
+import time
+import torch
 
+# BoTorch imports for single-objective optimization.
+from botorch.models import SingleTaskGP
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from botorch.fit import fit_gpytorch_mll
+from botorch.acquisition.analytic import LogExpectedImprovement
+from botorch.optim import optimize_acqf
+
+# Import your project modules.
 from generate_config import generate_waveguide_config
 from generate_abec_file import generate_abec_file
 from run_abec import run_abec_simulation
@@ -14,17 +22,15 @@ from get_simulation_folder_type import get_simulation_folder_type
 from copy_results import copy_results
 from rate_target_size import calculate_radius
 from database_helper import initialize_db, get_completed_simulations, insert_params, update_rating
-from plot_FRD import plot_frequency_responses  # import the plotting function
+from plot_FRD import plot_frequency_responses  # plotting function
+from skopt.space import Real
 
 # ------------------------------
 # USER-CONFIGURABLE THRESHOLD
 # ------------------------------
-# Any simulation (old or new) with a rating above this is considered invalid.
-# Old simulations above this threshold will be skipped.
-# New simulations that compute a rating above this threshold will be **clipped** to THRESHOLD_RATING.
 THRESHOLD_RATING = 9999.0
 
-# Load configuration from config.ini
+# Load configuration from config.ini.
 config = configparser.ConfigParser()
 config.read("config.ini")
 RESULTS_FOLDER = config["Paths"]["RESULTS_FOLDER"]
@@ -32,7 +38,7 @@ HORNS_FOLDER = config["Paths"]["HORNS_FOLDER"]
 ATH_EXE_PATH = config["Paths"]["ATH_EXE_PATH"]
 CONFIGS_FOLDER = config["Paths"]["CONFIGS_FOLDER"]
 
-# Initialize the database (clear it beforehand when reconfiguring parameters)
+# Initialize the database.
 initialize_db("waveguides.db")
 
 # Prepare structures for fixed parameters, optimization space, and variable parameter names.
@@ -40,12 +46,14 @@ fixed_params = {}
 space = []
 variable_names = []
 
+
 def add_param(param_name, lower=None, upper=None):
     if lower == upper:
         fixed_params[param_name] = lower
     else:
         space.append(Real(lower, upper, name=param_name))
         variable_names.append(param_name)
+
 
 # Populate fixed parameters and optimization space.
 add_param('r0', 14.0, 14.0)
@@ -67,7 +75,7 @@ add_param('u_vn', 0.0, 1.0)
 target_size = 65
 
 # -----------------------------------------------------------
-# 1) LOAD PREVIOUS SIMULATIONS, IGNORING THOSE ABOVE THRESHOLD
+# LOAD PREVIOUS SIMULATIONS, IGNORING THOSE ABOVE THRESHOLD
 # -----------------------------------------------------------
 simulations, old_ratings = get_completed_simulations(db_path="waveguides.db")
 print(f"Successfully loaded {len(simulations)} previous simulation result(s) from the database.")
@@ -75,7 +83,6 @@ print(f"Successfully loaded {len(simulations)} previous simulation result(s) fro
 x0_filtered = []
 y0_filtered = []
 skipped_count = 0
-
 for sim_dict, rating in zip(simulations, old_ratings):
     if rating <= THRESHOLD_RATING:
         x_vector = [sim_dict[name] for name in variable_names]
@@ -86,30 +93,56 @@ for sim_dict, rating in zip(simulations, old_ratings):
         print(f"Skipping old waveguide with rating {rating} above threshold {THRESHOLD_RATING}.")
 
 print(f"Using {len(x0_filtered)} data points after skipping {skipped_count} due to threshold.")
-x0, y0 = x0_filtered, y0_filtered
+if len(x0_filtered) > 0:
+    X_train = torch.tensor(x0_filtered, dtype=torch.double)
+    Y_train = torch.tensor(y0_filtered, dtype=torch.double).unsqueeze(-1)
+else:
+    X_train = torch.empty((0, len(space)), dtype=torch.double)
+    Y_train = torch.empty((0, 1), dtype=torch.double)
 
-# Function to create a marker file for failed waveguides.
-def create_marker_file(results_folder, foldername, rating):
-    marker_filename = f"{rating:.2f}_{foldername}.png"
-    marker_file_path = os.path.join(results_folder, marker_filename)
-    with open(marker_file_path, "w") as marker_file:
-        marker_file.write(f"Rating: {rating}\n")
-        marker_file.write(f"Foldername: {foldername}\n")
-    print(f"Created marker file for failed waveguide: {marker_filename}")
+# Create bounds tensor (in original domain): shape (2, d)
+d = len(space)
+bounds = torch.tensor([[dim.low for dim in space],
+                       [dim.high for dim in space]], dtype=torch.double)
+
+
+# ---- Scaling functions ----
+def scale_point_torch(x, bounds):
+    """Scales x (tensor) from original domain to [0,1]^d."""
+    lower = bounds[0]
+    upper = bounds[1]
+    return (x - lower) / (upper - lower)
+
+
+def unscale_point_torch(x_scaled, bounds):
+    """Unscales x (tensor) from [0,1]^d to original domain."""
+    lower = bounds[0]
+    upper = bounds[1]
+    return x_scaled * (upper - lower) + lower
+
+
+# If we have previous data, scale it.
+if X_train.shape[0] > 0:
+    X_train = scale_point_torch(X_train, bounds)
+
 
 # -----------------------------------------------------------
-# OBJECTIVE FUNCTION
+# OBJECTIVE FUNCTION (adapted for BoTorch with scaling)
 # -----------------------------------------------------------
 def objective(params):
-    # Unpack parameters and merge with fixed parameters.
+    """
+    Unpacks a parameter list (in original domain), runs the simulation, and returns the total rating.
+    Returns a torch.tensor of shape (1,) in double precision.
+    """
+    # 'params' is in the original domain.
     param_values = {dim.name: val for dim, val in zip(space, params)}
     param_values.update(fixed_params)
 
     formatted_params = {
         'r0': float(f"{param_values['r0']:.2f}"),
         'L': float(f"{param_values['L']:.2f}"),
-        'a': float(f"{param_values['a']:.2f}"),
         'a0': float(f"{param_values['a0']:.2f}"),
+        'a': float(f"{param_values['a']:.2f}"),
         'k': float(f"{param_values['k']:.2f}"),
         's': float(f"{param_values['s']:.2f}"),
         'q': float(f"{param_values['q']:.3f}"),
@@ -123,70 +156,46 @@ def objective(params):
         'mr': float(f"{param_values['mr']:.2f}")
     }
 
-    # --- Database Integration: Insert new simulation data.
     config_id = insert_params(formatted_params, db_path="waveguides.db")
     filename = f"{config_id}.cfg"
-    foldername = str(config_id)
+    foldername_sim = str(config_id)
 
     if not generate_waveguide_config(CONFIGS_FOLDER, filename, config_id, verbose=False):
         print("Failed to generate config.")
-        return 1e6
+        return torch.tensor([1e6], dtype=torch.double)
 
     sim_folder, sim_type = get_simulation_folder_type("base_template.txt")
     if not generate_abec_file(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=False):
         print("Failed to generate ABEC file.")
-        return 1e6
-    if not run_abec_simulation(foldername):
+        return torch.tensor([1e6], dtype=torch.double)
+    if not run_abec_simulation(foldername_sim):
         print("Failed to run ABEC simulation.")
-        return 1e6
+        return torch.tensor([1e6], dtype=torch.double)
     if not generate_report(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=True):
         print("Failed to generate report.")
-        return 1e6
+        return torch.tensor([1e6], dtype=torch.double)
 
-    # Compute the FR rating.
     try:
-        fr_rating = rate_frequency_response(HORNS_FOLDER, foldername, sim_folder, verbose=False)
+        fr_rating = rate_frequency_response(HORNS_FOLDER, foldername_sim, sim_folder, verbose=False)
         print(f"FR Rating: {fr_rating}")
     except Exception as e:
         print(f"Error calculating FR rating: {e}")
         fr_rating = 1e4
 
-    # Compute size penalty (functionality commented out)
-    # try:
-    #     radius = calculate_radius(
-    #         formatted_params['a0'],
-    #         formatted_params['a'],
-    #         formatted_params['r0'],
-    #         formatted_params['k'],
-    #         formatted_params['L'],
-    #         formatted_params['s'],
-    #         formatted_params['n'],
-    #         formatted_params['q']
-    #     )
-    #     size_penalty = abs(radius - target_size)
-    #     print(f"Calculated radius: {radius:.2f}, Target: {target_size}, Penalty: {size_penalty:.2f}")
-    # except Exception as e:
-    #     print(f"Error calculating radius: {e}")
-    #     size_penalty = 1e6
-    #
-    # For now, we disable the size penalty by setting it to zero.
+    # Size penalty disabled.
     size_penalty = 0
 
     total_rating = fr_rating + size_penalty
     print(f"Total Rating: {total_rating}")
 
-    # If new simulation rating exceeds the threshold, clip it to the threshold.
     if total_rating > THRESHOLD_RATING:
         print(f"New simulation rating {total_rating} exceeds threshold {THRESHOLD_RATING} => clipping to threshold.")
         total_rating = THRESHOLD_RATING + 0.1
 
-    # Update the new rating in the database.
     update_rating(config_id, total_rating, db_path="waveguides.db")
-
-    # Plot the frequency response.
     try:
         plot_frequency_responses(
-            foldername, sim_folder,
+            foldername_sim, sim_folder,
             HORNS_FOLDER, RESULTS_FOLDER,
             total_rating, config_id,
             formatted_params
@@ -194,70 +203,73 @@ def objective(params):
     except Exception as e:
         print(f"Error generating FRD plot: {e}")
 
-    return total_rating
+    return torch.tensor([total_rating], dtype=torch.double)
+
 
 # -----------------------------------------------------------
-# VALIDATE PREVIOUS DATA POINTS (OLD SIMULATIONS)
+# BO-TORCH OPTIMIZATION LOOP
 # -----------------------------------------------------------
-invalid_points = []
-for i, point in enumerate(x0):
-    out_of_bounds = False
-    out_of_bounds_params = {}
-    for val, dim in zip(point, space):
-        if not (dim.low <= val <= dim.high):
-            out_of_bounds = True
-            out_of_bounds_params[dim.name] = {"value": val, "bounds": (dim.low, dim.high)}
-    if out_of_bounds:
-        invalid_points.append((i, point, out_of_bounds_params))
-
-if invalid_points:
-    print(f"Found {len(invalid_points)} point(s) out of bounds in `x0`:")
-    for index, point, params in invalid_points:
-        print(f"\nPoint #{index} out of bounds: {point}")
-        for param_name, info in params.items():
-            print(f"  Parameter '{param_name}' = {info['value']} (out of bounds: {info['bounds']})")
+TOTAL_CALLS = 384  # Adjusted for faster experimentation.
+if X_train.shape[0] == 0:
+    n_initial = 128
+    # Generate n_initial points uniformly in [0,1]^d.
+    X_init = torch.rand(n_initial, d, dtype=torch.double)
+    X_train = X_init.clone()
+    Y_list = []
+    for x in X_train:
+        x_orig = unscale_point_torch(x, bounds).tolist()
+        y_val = objective(x_orig).item()
+        Y_list.append(y_val)
+    Y_train = torch.tensor(Y_list, dtype=torch.double).unsqueeze(-1)
+    print(f"Generated {n_initial} initial design points.")
 else:
-    print("All points in `x0` are within bounds.")
+    n_initial = X_train.shape[0]
 
-# -----------------------------------------------------------
-# RUN BAYESIAN OPTIMIZATION (IF NO INVALID POINTS)
-# -----------------------------------------------------------
-if not invalid_points:
-    if x0 and y0:
-        print("Using valid old data points.")
-        result = gp_minimize(
-            func=objective,
-            dimensions=space,
-            x0=x0,
-            y0=y0,
-            n_calls=1312,
-            n_initial_points=0,
-            acq_func="gp_hedge",
-            acq_optimizer="auto",
-            initial_point_generator='lhs',
-            n_jobs=32,
-            verbose=True,
-        )
-        optimal_params = result.x
-        optimal_rating = result.fun
-        print("Optimal parameters:", optimal_params)
-        print("Optimal rating:", optimal_rating)
-    else:
-        print("No valid previous data points. Starting fresh optimization.")
-        result = gp_minimize(
-            func=objective,
-            dimensions=space,
-            n_calls=1312,
-            n_initial_points=768,
-            acq_func="gp_hedge",
-            acq_optimizer="auto",
-            initial_point_generator='sobol',
-            n_jobs=32,
-            verbose=True,
-        )
-        optimal_params = result.x
-        optimal_rating = result.fun
-        print("Optimal parameters:", optimal_params)
-        print("Optimal rating:", optimal_rating)
-else:
-    print("Please adjust out-of-bounds points in `x0` to proceed with optimization.")
+n_iter = TOTAL_CALLS - n_initial
+print(f"Starting optimization with {n_initial} initial points and {n_iter} iterations.")
+
+import time
+
+# Optimization loop.
+for i in range(n_iter):
+    start_time = time.time()  # Record start time.
+
+    # Fit GP model on scaled data.
+    model = SingleTaskGP(X_train, Y_train)
+    mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    fit_gpytorch_mll(mll)
+
+    # Use LogExpectedImprovement as the acquisition function.
+    EI = LogExpectedImprovement(model=model, best_f=Y_train.min(), maximize=False)
+
+    candidate_scaled, acq_value = optimize_acqf(
+        acq_function=EI,
+        bounds=torch.stack([torch.zeros(d, dtype=torch.double), torch.ones(d, dtype=torch.double)]),
+        q=1,
+        num_restarts=5,
+        raw_samples=10,
+        options={"batch_limit": 5, "maxiter": 100},
+    )
+
+    # Candidate is in scaled space; unscale it.
+    new_x_scaled = candidate_scaled.detach()
+    new_x = unscale_point_torch(new_x_scaled, bounds)
+
+    new_y_val = objective(new_x.numpy()[0]).item()
+    new_y = torch.tensor([new_y_val], dtype=torch.double).unsqueeze(-1)
+
+    # Append new candidate (scaled) and its objective.
+    X_train = torch.cat([X_train, new_x_scaled], dim=0)
+    Y_train = torch.cat([Y_train, new_y], dim=0)
+
+    end_time = time.time()  # Record end time.
+    iteration_time = end_time - start_time
+    print(
+        f"Iteration {i + 1}: Candidate (unscaled) {new_x.numpy()[0]}, Objective {new_y_val}, Time: {iteration_time:.2f} seconds")
+
+best_index = torch.argmin(Y_train)
+best_x_scaled = X_train[best_index]
+best_x = unscale_point_torch(best_x_scaled, bounds)
+best_y = Y_train[best_index].item()
+print("Optimal parameters (BoTorch):", best_x.numpy())
+print("Optimal rating:", best_y)
