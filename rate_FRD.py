@@ -21,20 +21,20 @@ ERROR_METRIC = "SFM"
 DELTA = 1.35
 
 # Frequency ranges for fitting (used to train the line) and for rating.
-fit_frequency_range = (3000, 10000)
+fit_frequency_range = (2000, 14000)
 # Define separate rating sub-ranges, each with its own weight.
 rating_ranges = [
-    ((3000, 8000), 200.0),   # (frequency range, weight) #100
-    ((8001, 12000), 50.0), #50
+    ((2000, 10000), 200.0),   # (frequency range, weight) #100
+    ((8001, 16000), 50.0), #50
     ((12001, 20000), 10.0) #10
 ]
 
 # Global weighting factors for amplitude ratings.
 HOR_WEIGHT = 1.0
-VER_WEIGHT = 0.8
+VER_WEIGHT = 0.6
 
 # Global weighting factor for slope ratings.
-GLOBAL_SLOPE_WEIGHT = 0.0
+GLOBAL_SLOPE_WEIGHT = 0.5
 
 # Define angle-based weightings for amplitude ratings.
 angle_weight_hor = {

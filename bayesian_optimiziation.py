@@ -19,7 +19,6 @@ from run_abec import run_abec_simulation
 from generate_report import generate_report
 from rate_FRD import rate_frequency_response
 from get_simulation_folder_type import get_simulation_folder_type
-from copy_results import copy_results
 from rate_target_size import calculate_radius
 from database_helper import initialize_db, get_completed_simulations, insert_params, update_rating
 from plot_FRD import plot_frequency_responses  # plotting function
@@ -41,11 +40,14 @@ CONFIGS_FOLDER = config["Paths"]["CONFIGS_FOLDER"]
 # Initialize the database.
 initialize_db("waveguides.db")
 
+# Set up device: use GPU if available.
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 # Prepare structures for fixed parameters, optimization space, and variable parameter names.
 fixed_params = {}
 space = []
 variable_names = []
-
 
 def add_param(param_name, lower=None, upper=None):
     if lower == upper:
@@ -54,16 +56,15 @@ def add_param(param_name, lower=None, upper=None):
         space.append(Real(lower, upper, name=param_name))
         variable_names.append(param_name)
 
-
 # Populate fixed parameters and optimization space.
 add_param('r0', 14.0, 14.0)
-add_param('L', 10.0, 32.0)
-add_param('a0', 0, 80.0)
-add_param('a', 0.0, 80.0)
-add_param('k', 0.0, 10.0)
-add_param('s', 0.0, 4.0)
+add_param('L', 10.0, 45.0)
+add_param('a0', 20.0, 80.0)
+add_param('a', 20.0, 80.0)
+add_param('k', 0.1, 10.0)
+add_param('s', 0.0, 2.0)
 add_param('q', 0.99, 1.0)
-add_param('n', 1.0, 15.0)
+add_param('n', 1.0, 10.0)
 add_param('mfp', -4.0, -0.0)  # using this as ZOFF here!
 add_param('mr', 2.0, 2.0)
 add_param('u_va', 0.0, 1.0)
@@ -94,17 +95,16 @@ for sim_dict, rating in zip(simulations, old_ratings):
 
 print(f"Using {len(x0_filtered)} data points after skipping {skipped_count} due to threshold.")
 if len(x0_filtered) > 0:
-    X_train = torch.tensor(x0_filtered, dtype=torch.double)
-    Y_train = torch.tensor(y0_filtered, dtype=torch.double).unsqueeze(-1)
+    X_train = torch.tensor(x0_filtered, dtype=torch.double).to(device)
+    Y_train = torch.tensor(y0_filtered, dtype=torch.double).unsqueeze(-1).to(device)
 else:
-    X_train = torch.empty((0, len(space)), dtype=torch.double)
-    Y_train = torch.empty((0, 1), dtype=torch.double)
+    X_train = torch.empty((0, len(space)), dtype=torch.double, device=device)
+    Y_train = torch.empty((0, 1), dtype=torch.double, device=device)
 
 # Create bounds tensor (in original domain): shape (2, d)
 d = len(space)
 bounds = torch.tensor([[dim.low for dim in space],
-                       [dim.high for dim in space]], dtype=torch.double)
-
+                       [dim.high for dim in space]], dtype=torch.double, device=device)
 
 # ---- Scaling functions ----
 def scale_point_torch(x, bounds):
@@ -113,18 +113,15 @@ def scale_point_torch(x, bounds):
     upper = bounds[1]
     return (x - lower) / (upper - lower)
 
-
 def unscale_point_torch(x_scaled, bounds):
     """Unscales x (tensor) from [0,1]^d to original domain."""
     lower = bounds[0]
     upper = bounds[1]
     return x_scaled * (upper - lower) + lower
 
-
 # If we have previous data, scale it.
 if X_train.shape[0] > 0:
     X_train = scale_point_torch(X_train, bounds)
-
 
 # -----------------------------------------------------------
 # OBJECTIVE FUNCTION (adapted for BoTorch with scaling)
@@ -139,21 +136,21 @@ def objective(params):
     param_values.update(fixed_params)
 
     formatted_params = {
-        'r0': float(f"{param_values['r0']:.2f}"),
-        'L': float(f"{param_values['L']:.2f}"),
-        'a0': float(f"{param_values['a0']:.2f}"),
-        'a': float(f"{param_values['a']:.2f}"),
-        'k': float(f"{param_values['k']:.2f}"),
-        's': float(f"{param_values['s']:.2f}"),
+        'r0': float(f"{param_values['r0']:.3f}"),
+        'L': float(f"{param_values['L']:.3f}"),
+        'a0': float(f"{param_values['a0']:.3f}"),
+        'a': float(f"{param_values['a']:.3f}"),
+        'k': float(f"{param_values['k']:.3f}"),
+        's': float(f"{param_values['s']:.3f}"),
         'q': float(f"{param_values['q']:.3f}"),
-        'n': float(f"{param_values['n']:.2f}"),
+        'n': float(f"{param_values['n']:.3f}"),
         'u_va': float(f"{param_values['u_va']:.3f}"),
         'u_va0': float(f"{param_values['u_va0']:.3f}"),
         'u_vk': float(f"{param_values['u_vk']:.3f}"),
         'u_vs': float(f"{param_values['u_vs']:.3f}"),
         'u_vn': float(f"{param_values['u_vn']:.3f}"),
-        'mfp': float(f"{param_values['mfp']:.2f}"),
-        'mr': float(f"{param_values['mr']:.2f}")
+        'mfp': float(f"{param_values['mfp']:.3f}"),
+        'mr': float(f"{param_values['mr']:.3f}")
     }
 
     config_id = insert_params(formatted_params, db_path="waveguides.db")
@@ -162,18 +159,18 @@ def objective(params):
 
     if not generate_waveguide_config(CONFIGS_FOLDER, filename, config_id, verbose=False):
         print("Failed to generate config.")
-        return torch.tensor([1e6], dtype=torch.double)
+        return torch.tensor([1e6], dtype=torch.double, device=device)
 
     sim_folder, sim_type = get_simulation_folder_type("base_template.txt")
     if not generate_abec_file(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=False):
         print("Failed to generate ABEC file.")
-        return torch.tensor([1e6], dtype=torch.double)
+        return torch.tensor([1e6], dtype=torch.double, device=device)
     if not run_abec_simulation(foldername_sim):
         print("Failed to run ABEC simulation.")
-        return torch.tensor([1e6], dtype=torch.double)
+        return torch.tensor([1e6], dtype=torch.double, device=device)
     if not generate_report(CONFIGS_FOLDER, ATH_EXE_PATH, filename, verbose=True):
         print("Failed to generate report.")
-        return torch.tensor([1e6], dtype=torch.double)
+        return torch.tensor([1e6], dtype=torch.double, device=device)
 
     try:
         fr_rating = rate_frequency_response(HORNS_FOLDER, foldername_sim, sim_folder, verbose=False)
@@ -203,24 +200,24 @@ def objective(params):
     except Exception as e:
         print(f"Error generating FRD plot: {e}")
 
-    return torch.tensor([total_rating], dtype=torch.double)
-
+    return torch.tensor([total_rating], dtype=torch.double, device=device)
 
 # -----------------------------------------------------------
 # BO-TORCH OPTIMIZATION LOOP
 # -----------------------------------------------------------
-TOTAL_CALLS = 384  # Adjusted for faster experimentation.
+TOTAL_CALLS = 1024  # Adjusted for faster experimentation.
 if X_train.shape[0] == 0:
-    n_initial = 128
+    n_initial = 512
     # Generate n_initial points uniformly in [0,1]^d.
-    X_init = torch.rand(n_initial, d, dtype=torch.double)
+    sampler = SobolQMCNormalSampler(num)#torch.quasirandom.SobolEngine(d, scramble=True)
+    X_init = sampler.draw(n_initial).to(device)
     X_train = X_init.clone()
     Y_list = []
     for x in X_train:
         x_orig = unscale_point_torch(x, bounds).tolist()
         y_val = objective(x_orig).item()
         Y_list.append(y_val)
-    Y_train = torch.tensor(Y_list, dtype=torch.double).unsqueeze(-1)
+    Y_train = torch.tensor(Y_list, dtype=torch.double, device=device).unsqueeze(-1)
     print(f"Generated {n_initial} initial design points.")
 else:
     n_initial = X_train.shape[0]
@@ -228,11 +225,9 @@ else:
 n_iter = TOTAL_CALLS - n_initial
 print(f"Starting optimization with {n_initial} initial points and {n_iter} iterations.")
 
-import time
-
 # Optimization loop.
 for i in range(n_iter):
-    start_time = time.time()  # Record start time.
+    start_time = time.time()
 
     # Fit GP model on scaled data.
     model = SingleTaskGP(X_train, Y_train)
@@ -244,32 +239,30 @@ for i in range(n_iter):
 
     candidate_scaled, acq_value = optimize_acqf(
         acq_function=EI,
-        bounds=torch.stack([torch.zeros(d, dtype=torch.double), torch.ones(d, dtype=torch.double)]),
+        bounds=torch.stack([torch.zeros(d, dtype=torch.double, device=device),
+                            torch.ones(d, dtype=torch.double, device=device)]),
         q=1,
-        num_restarts=5,
-        raw_samples=10,
-        options={"batch_limit": 5, "maxiter": 100},
+        num_restarts=20,  # Increased restarts
+        raw_samples=50,  # More raw samples
+        options={"batch_limit": 10, "maxiter": 300},  # Higher max iterations and batch limit
     )
 
-    # Candidate is in scaled space; unscale it.
     new_x_scaled = candidate_scaled.detach()
     new_x = unscale_point_torch(new_x_scaled, bounds)
 
-    new_y_val = objective(new_x.numpy()[0]).item()
-    new_y = torch.tensor([new_y_val], dtype=torch.double).unsqueeze(-1)
+    new_y_val = objective(new_x.cpu().numpy()[0]).item()
+    new_y = torch.tensor([new_y_val], dtype=torch.double, device=device).unsqueeze(-1)
 
-    # Append new candidate (scaled) and its objective.
     X_train = torch.cat([X_train, new_x_scaled], dim=0)
     Y_train = torch.cat([Y_train, new_y], dim=0)
 
-    end_time = time.time()  # Record end time.
+    end_time = time.time()
     iteration_time = end_time - start_time
-    print(
-        f"Iteration {i + 1}: Candidate (unscaled) {new_x.numpy()[0]}, Objective {new_y_val}, Time: {iteration_time:.2f} seconds")
+    print(f"Iteration {i+1}: Candidate (unscaled) {new_x.cpu().numpy()[0]}, Objective {new_y_val},\nTime: {iteration_time:.2f} seconds")
 
 best_index = torch.argmin(Y_train)
 best_x_scaled = X_train[best_index]
 best_x = unscale_point_torch(best_x_scaled, bounds)
 best_y = Y_train[best_index].item()
-print("Optimal parameters (BoTorch):", best_x.numpy())
+print("Optimal parameters (BoTorch):", best_x.cpu().numpy())
 print("Optimal rating:", best_y)

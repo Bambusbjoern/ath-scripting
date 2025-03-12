@@ -15,8 +15,8 @@ PLOT_FITTED_LINES = True
 
 # The frequency range to use for fitting the line (e.g., the same as your rate script).
 # We'll fit only data in [FIT_LO, FIT_HI], then plot that line across the entire data range.
-FIT_LO = 3000
-FIT_HI = 10000
+FIT_LO = 2000
+FIT_HI = 14000
 
 # If you prefer ordinary linear regression, set USE_HUBER = False
 USE_HUBER = True

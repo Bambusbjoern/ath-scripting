@@ -47,11 +47,11 @@ def generate_waveguide_config(configs_folder, filename, config_id, verbose=False
             base_template_content = file.read()
 
         # Berechne ggf. abgeleitete Parameter, z.B.:
-        va = round(-(-a + u_va * 80), 2)
-        va0 = round(-(-a0 + u_va0 * 80), 2)  # Beispiel: abgeleiteter Parameter für va0
-        vk = round(-(-k + u_vk * 10), 2)  # Beispiel: abgeleiteter Parameter für vk
+        va = round(-(20-a + u_va * (80-20)), 2)
+        va0 = round(-(20 - a0 + u_va0 * (80-20)), 2)  # Beispiel: abgeleiteter Parameter für va0
+        vk = round(-(0.1 - k + u_vk * 9.9), 2)  # Beispiel: abgeleiteter Parameter für vk
         vs = round(-(-s + u_vs * 2), 2)  # Beispiel: abgeleiteter Parameter für vs
-        vn = round(-(1 - n + u_vn * 14), 2)  # Beispiel: abgeleiteter Parameter für vn
+        vn = round(-(0 - n + u_vn * 10), 2)  # Beispiel: abgeleiteter Parameter für vn
 
         # Fülle das Template mit den Werten
         config_content = base_template_content.format(
